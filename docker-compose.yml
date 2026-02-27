@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: starhotel
+      POSTGRES_PASSWORD: starhotel123
+      POSTGRES_DB: starhotel
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U starhotel']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - '3001:3001'
+    environment:
+      DATABASE_URL: postgresql://starhotel:starhotel123@postgres:5432/starhotel
+      JWT_SECRET: star-hotel-jwt-secret-key-2024
+      JWT_REFRESH_SECRET: star-hotel-refresh-secret-key-2024
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      PORT: '3001'
+      CORS_ORIGIN: http://localhost
+      NODE_ENV: production
+      DEFAULT_DEPOSIT: '20.00'
+      LATE_CHECKOUT_HOUR: '14'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - '80:80'
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
