@@ -1,0 +1,194 @@
+// Prisma Schema for Star Hotel V
+// Maps from legacy MS Access 11-table schema to PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoomStatus {
+  Open
+  Booked
+  Occupied
+  Housekeeping
+  Maintenance
+}
+
+model Company {
+  id              Int      @id @default(autoincrement())
+  companyName     String   @map("company_name")
+  streetAddress   String   @map("street_address")
+  contactNo       String   @map("contact_no")
+  systemStartDate DateTime @default(now()) @map("system_start_date")
+  productVersion  String   @default("2.0.0") @map("product_version")
+  databaseVersion Float    @default(2.0) @map("database_version")
+  currencySymbol  String   @default("MYR") @map("currency_symbol") @db.VarChar(3)
+  active          Boolean  @default(true)
+
+  @@map("companies")
+}
+
+model UserGroup {
+  id            Int        @id @default(autoincrement())
+  groupName     String     @map("group_name") @db.VarChar(20)
+  groupDesc     String     @map("group_desc") @db.VarChar(255)
+  securityLevel Int        @map("security_level")
+  active        Boolean    @default(true)
+  users         UserData[]
+
+  @@map("user_groups")
+}
+
+model UserData {
+  id              Int       @id @default(autoincrement())
+  userGroup       Int       @map("user_group")
+  userId          String    @unique @map("user_id") @db.VarChar(20)
+  userName        String    @map("user_name") @db.VarChar(50)
+  userPassword    String    @map("user_password") @db.VarChar(255)
+  idle            Int       @default(0)
+  loginAttempts   Int       @default(0) @map("login_attempts")
+  changePassword  Boolean   @default(false) @map("change_password")
+  dashboardBlink  Boolean   @default(true) @map("dashboard_blink")
+  active          Boolean   @default(true)
+  group           UserGroup @relation(fields: [userGroup], references: [id])
+
+  @@map("user_data")
+}
+
+model ModuleAccess {
+  id         Int     @id @default(autoincrement())
+  moduleId   Int     @map("module_id")
+  moduleDesc String  @map("module_desc") @db.VarChar(50)
+  moduleType String  @map("module_type") @db.VarChar(50)
+  group1     Boolean @default(false)
+  group2     Boolean @default(false)
+  group3     Boolean @default(false)
+  group4     Boolean @default(false)
+  active     Boolean @default(true)
+
+  @@map("module_access")
+}
+
+model RoomType {
+  id            Int     @id @default(autoincrement())
+  typeShortName String  @map("type_short_name") @db.VarChar(30)
+  typeLongName  String  @default("") @map("type_long_name") @db.VarChar(255)
+  active        Boolean @default(true)
+
+  @@map("room_types")
+}
+
+model Room {
+  id               Int        @id @default(autoincrement())
+  bookingId        Int        @default(0) @map("booking_id")
+  roomShortName    String     @map("room_short_name") @db.VarChar(50)
+  roomLongName     String     @default("") @map("room_long_name") @db.VarChar(255)
+  roomStatus       RoomStatus @default(Open) @map("room_status")
+  roomType         String     @map("room_type") @db.VarChar(50)
+  roomLocation     String     @map("room_location") @db.VarChar(50)
+  roomPrice        Decimal    @default(0) @map("room_price") @db.Decimal(10, 2)
+  breakfast        Boolean    @default(false)
+  breakfastPrice   Decimal    @default(0) @map("breakfast_price") @db.Decimal(10, 2)
+  maintenance      Boolean    @default(false)
+  active           Boolean    @default(true)
+  createdDate      DateTime   @default(now()) @map("created_date")
+  createdBy        String     @default("System") @map("created_by") @db.VarChar(50)
+  lastModifiedDate DateTime?  @map("last_modified_date")
+  lastModifiedBy   String?    @map("last_modified_by") @db.VarChar(50)
+
+  @@map("rooms")
+}
+
+model Booking {
+  id                        Int       @id @default(autoincrement())
+  guestName                 String    @default("") @map("guest_name") @db.VarChar(50)
+  guestPassport             String    @default("") @map("guest_passport") @db.VarChar(50)
+  guestOrigin               String    @default("") @map("guest_origin") @db.VarChar(50)
+  guestContact              String    @default("") @map("guest_contact") @db.VarChar(50)
+  guestEmergencyContactName String    @default("") @map("guest_emergency_contact_name") @db.VarChar(50)
+  guestEmergencyContactNo   String    @default("") @map("guest_emergency_contact_no") @db.VarChar(50)
+  totalGuest                Int       @default(0) @map("total_guest")
+  stayDuration              Int       @default(0) @map("stay_duration")
+  bookingDate               DateTime? @map("booking_date")
+  guestCheckIn              DateTime? @map("guest_check_in")
+  guestCheckOut             DateTime? @map("guest_check_out")
+  remarks                   String    @default("") @db.Text
+  roomId                    Int       @default(0) @map("room_id")
+  roomNo                    String    @default("") @map("room_no") @db.VarChar(50)
+  roomType                  String    @default("") @map("room_type") @db.VarChar(50)
+  roomLocation              String    @default("") @map("room_location") @db.VarChar(50)
+  roomPrice                 Decimal   @default(0) @map("room_price") @db.Decimal(10, 2)
+  breakfast                 Boolean   @default(false)
+  breakfastPrice            Decimal   @default(0) @map("breakfast_price") @db.Decimal(10, 2)
+  subTotal                  Decimal   @default(0) @map("sub_total") @db.Decimal(10, 2)
+  deposit                   Decimal   @default(0) @db.Decimal(10, 2)
+  payment                   Decimal   @default(0) @db.Decimal(10, 2)
+  refund                    Decimal   @default(0) @db.Decimal(10, 2)
+  active                    Boolean   @default(true)
+  temp                      Boolean   @default(true)
+  createdDate               DateTime  @default(now()) @map("created_date")
+  createdBy                 String    @default("") @map("created_by") @db.VarChar(50)
+  lastModifiedDate          DateTime? @map("last_modified_date")
+  lastModifiedBy            String?   @map("last_modified_by") @db.VarChar(50)
+
+  @@map("bookings")
+}
+
+model LogBooking {
+  id                        Int       @id @default(autoincrement())
+  bookingId                 Int       @map("booking_id")
+  guestName                 String    @default("") @map("guest_name") @db.VarChar(50)
+  guestPassport             String    @default("") @map("guest_passport") @db.VarChar(50)
+  guestOrigin               String    @default("") @map("guest_origin") @db.VarChar(50)
+  guestContact              String    @default("") @map("guest_contact") @db.VarChar(50)
+  action                    String    @db.VarChar(50)
+  createdDate               DateTime  @default(now()) @map("created_date")
+  createdBy                 String    @default("") @map("created_by") @db.VarChar(50)
+
+  @@map("log_bookings")
+}
+
+model LogRoom {
+  id               Int       @id @default(autoincrement())
+  roomId           Int       @map("room_id")
+  bookingId        Int       @default(0) @map("booking_id")
+  roomShortName    String    @default("") @map("room_short_name") @db.VarChar(50)
+  roomStatus       String    @default("") @map("room_status") @db.VarChar(50)
+  action           String    @db.VarChar(50)
+  createdDate      DateTime  @default(now()) @map("created_date")
+  createdBy        String    @default("") @map("created_by") @db.VarChar(50)
+
+  @@map("log_rooms")
+}
+
+model LogError {
+  id                 Int      @id @default(autoincrement())
+  logDateTime        DateTime @default(now()) @map("log_date_time")
+  logErrorNum        String   @default("") @map("log_error_num") @db.VarChar(50)
+  logErrorDescription String  @default("") @map("log_error_description") @db.Text
+  logUserName        String   @default("") @map("log_user_name") @db.VarChar(50)
+  logModule          String   @default("") @map("log_module") @db.VarChar(255)
+  logMethod          String   @default("") @map("log_method") @db.VarChar(255)
+  logType            String   @default("") @map("log_type") @db.VarChar(255)
+
+  @@map("log_errors")
+}
+
+model Report {
+  id             Int     @id @default(autoincrement())
+  reportId       Int     @map("report_id")
+  reportName     String  @map("report_name") @db.VarChar(255)
+  reportTitle    String  @map("report_title") @db.VarChar(255)
+  reportAsOn     String  @default("") @map("report_as_on") @db.VarChar(50)
+  showReportAsOn Boolean @default(false) @map("show_report_as_on")
+  dateField      String  @default("") @map("date_field") @db.VarChar(50)
+  dateType       String  @default("") @map("date_type") @db.VarChar(50)
+  reportQuery    String  @default("") @map("report_query") @db.Text
+  active         Boolean @default(true)
+
+  @@map("reports")
+}
