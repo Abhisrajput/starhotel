@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import { Bm25Index, clauseText, controlText } from './engine/grounding';
-import type { LlmProvider } from './engine/llm/provider';
-import { OFFLINE } from './engine/llm/router';
+import type { ModelRouter } from './engine/llm/router';
 import { ModuleContext, type Grounding } from './engine/module';
 import { getModule, MODULES } from './engine/modules';
 import type { PackRegistry } from './engine/packs';
@@ -40,15 +39,16 @@ const PREPARERS = ['auditor', 'reviewer'];
 export class AuditService {
   readonly grounding: Grounding;
 
-  constructor(readonly store: Store, readonly registry: PackRegistry, readonly llm: LlmProvider | null) {
+  constructor(readonly store: Store, readonly registry: PackRegistry, readonly models: ModelRouter) {
     this.grounding = {
       clauses: new Bm25Index([...registry.clauses.values()].map((c) => ({ id: c.id, text: clauseText(c) }))),
       controls: new Bm25Index([...registry.controls.values()].map((c) => ({ id: c.id, text: controlText(c) }))),
     };
   }
 
+  /** Default model plus any per-module routes. */
   get providerInfo() {
-    return this.llm ? { id: this.llm.id, model: this.llm.model } : { ...OFFLINE };
+    return this.models.describe().default;
   }
 
   user(id: string | undefined): User {
@@ -107,7 +107,8 @@ export class AuditService {
     if (blocker) throw new AppError(409, blocker);
 
     const startedAt = new Date().toISOString();
-    const ctx = new ModuleContext(e, this.registry, this.grounding, this.llm, actor, input);
+    const llm = this.models.forModule(mod.id);
+    const ctx = new ModuleContext(e, this.registry, this.grounding, llm, actor, input);
     ctx.step('start', `${mod.name} v${mod.version} on ${e.id}`);
     const output = await mod.run(ctx);
     ctx.step('end', `${ctx.qa.filter((q) => q.outcome === 'fail').length} gate failure(s), ${ctx.qa.filter((q) => q.outcome === 'warn').length} warning(s)`);
@@ -119,7 +120,7 @@ export class AuditService {
       moduleVersion: mod.version,
       engineVersion: ENGINE_VERSION,
       packVersions: this.registry.versions(e.packIds),
-      provider: this.llm ? { id: this.llm.id, model: ctx.servedModel ?? this.llm.model } : { ...OFFLINE },
+      provider: llm ? { id: llm.id, model: ctx.servedModel ?? llm.model } : { id: 'offline', model: 'deterministic-rules-v1' },
       promptHash: ctx.promptHash,
       actor: actor.id,
       startedAt,

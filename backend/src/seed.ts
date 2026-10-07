@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createProvider } from './engine/llm/router';
+import { ModelRouter } from './engine/llm/router';
 import { PackRegistry } from './engine/packs';
 import { AuditService, USERS } from './service';
 import { Store } from './store';
@@ -13,7 +13,7 @@ type Field = [controlId: string, designAdequate: boolean, observation: string, e
 async function main() {
   const file = process.env.DATA_FILE ?? path.resolve(__dirname, '../data/db.json');
   if (fs.existsSync(file)) fs.rmSync(file);
-  const svc = new AuditService(new Store(file), PackRegistry.loadFromDir(), createProvider());
+  const svc = new AuditService(new Store(file), PackRegistry.loadFromDir(), new ModelRouter());
   const [auditor, reviewer, approver] = USERS;
 
   async function build(meta: Parameters<AuditService['createEngagement']>[0], fields: Field[], approveFirst: number) {

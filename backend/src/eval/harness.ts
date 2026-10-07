@@ -1,4 +1,4 @@
-import type { LlmProvider } from '../engine/llm/provider';
+import type { ModelRouter } from '../engine/llm/router';
 import type { PackRegistry } from '../engine/packs';
 import type { ContentPack, EvalCase } from '../engine/types';
 import { AuditService, ENGINE_VERSION, USERS } from '../service';
@@ -39,8 +39,8 @@ interface TestCaseInput {
   exceptions: number;
 }
 
-async function runFieldCase(registry: PackRegistry, llm: LlmProvider | null, pack: ContentPack, input: TestCaseInput, withGaps: boolean) {
-  const svc = new AuditService(new Store(null), registry, llm);
+async function runFieldCase(registry: PackRegistry, models: ModelRouter, pack: ContentPack, input: TestCaseInput, withGaps: boolean) {
+  const svc = new AuditService(new Store(null), registry, models);
   const [auditor] = USERS;
   const control = registry.controls.get(input.controlId);
   if (!control) throw new Error(`Eval case references unknown control ${input.controlId}`);
@@ -57,7 +57,7 @@ async function runFieldCase(registry: PackRegistry, llm: LlmProvider | null, pac
   return svc.engagement(e.id);
 }
 
-async function runCase(registry: PackRegistry, llm: LlmProvider | null, svcForSearch: AuditService, pack: ContentPack, c: EvalCase): Promise<EvalCaseResult> {
+async function runCase(registry: PackRegistry, models: ModelRouter, svcForSearch: AuditService, pack: ContentPack, c: EvalCase): Promise<EvalCaseResult> {
   const base = { id: c.id, packId: pack.id, kind: c.kind, description: c.description };
   try {
     if (c.kind === 'retrieval') {
@@ -70,7 +70,7 @@ async function runCase(registry: PackRegistry, llm: LlmProvider | null, svcForSe
       return { ...base, passed: missing.length === 0, detail: missing.length ? `Missing from top ${k}: ${missing.join(', ')} (got ${hits.join(', ')})` : `All expected clauses in top ${k}` };
     }
     const input = c.input as unknown as TestCaseInput;
-    const e = await runFieldCase(registry, llm, pack, input, c.kind === 'gaps');
+    const e = await runFieldCase(registry, models, pack, input, c.kind === 'gaps');
     if (c.kind === 'testing') {
       const got = e.testResults[input.controlId]?.conclusion;
       return { ...base, passed: got === c.expected.conclusion, detail: `expected ${c.expected.conclusion}, got ${got}` };
@@ -93,12 +93,12 @@ async function runCase(registry: PackRegistry, llm: LlmProvider | null, svcForSe
   }
 }
 
-export async function runEval(registry: PackRegistry, llm: LlmProvider | null, packIds?: string[]): Promise<EvalReport> {
-  const svc = new AuditService(new Store(null), registry, llm);
+export async function runEval(registry: PackRegistry, models: ModelRouter, packIds?: string[]): Promise<EvalReport> {
+  const svc = new AuditService(new Store(null), registry, models);
   const packs = registry.list().filter((p) => !packIds || packIds.includes(p.id));
   const cases: EvalCaseResult[] = [];
   for (const pack of packs) {
-    for (const c of pack.evalCases) cases.push(await runCase(registry, llm, svc, pack, c));
+    for (const c of pack.evalCases) cases.push(await runCase(registry, models, svc, pack, c));
   }
   const byKind: EvalReport['byKind'] = {};
   for (const r of cases) {

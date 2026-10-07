@@ -1,4 +1,5 @@
 import type { GenerateRequest, GenerateResult, LlmProvider } from '../src/engine/llm/provider';
+import { ModelRouter } from '../src/engine/llm/router';
 import { PackRegistry } from '../src/engine/packs';
 import { AuditService, USERS } from '../src/service';
 import { Store } from '../src/store';
@@ -7,7 +8,7 @@ export const registry = PackRegistry.loadFromDir();
 export const [auditor, reviewer, approver] = USERS;
 
 export function newService(llm: LlmProvider | null = null) {
-  return new AuditService(new Store(null), registry, llm);
+  return new AuditService(new Store(null), registry, ModelRouter.fixed(llm));
 }
 
 /** A scripted model: returns whatever the handler builds for the request. */

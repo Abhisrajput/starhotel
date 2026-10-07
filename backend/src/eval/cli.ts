@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createProvider } from '../engine/llm/router';
+import { ModelRouter } from '../engine/llm/router';
 import { PackRegistry } from '../engine/packs';
 import { evalMarkdown, runEval } from './harness';
 
@@ -12,7 +12,7 @@ async function main() {
     return i >= 0 ? args[i + 1] : undefined;
   };
   const registry = PackRegistry.loadFromDir();
-  const report = await runEval(registry, createProvider(arg('provider') ?? 'offline'), arg('packs')?.split(','));
+  const report = await runEval(registry, new ModelRouter({ ...process.env, LLM_DEFAULT: arg('provider') ?? process.env.LLM_DEFAULT ?? 'offline' }), arg('packs')?.split(','));
   const outDir = path.resolve(__dirname, '../../validation-output');
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, 'eval-latest.json'), JSON.stringify(report, null, 2));

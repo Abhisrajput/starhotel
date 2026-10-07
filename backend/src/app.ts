@@ -47,7 +47,7 @@ export function createApp(svc: AuditService) {
   const wrap = (fn: (req: Request, res: Response) => unknown) => (req: Request, res: Response, next: NextFunction) =>
     Promise.resolve(fn(req, res)).catch(next);
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true, provider: svc.providerInfo }));
+  app.get('/api/health', (_req, res) => res.json({ ok: true, provider: svc.providerInfo, models: svc.models.describe() }));
   app.get('/api/users', (_req, res) => res.json(USERS));
   app.get('/api/modules', (_req, res) => res.json(svc.modules()));
 
@@ -121,7 +121,7 @@ export function createApp(svc: AuditService) {
   app.get('/api/trail/verify', (_req, res) => res.json(svc.verifyTrail()));
 
   app.post('/api/eval/run', wrap(async (_req, res) => {
-    const report = await runEval(svc.registry, svc.llm);
+    const report = await runEval(svc.registry, svc.models);
     svc.store.evalRuns.push(report);
     svc.store.save();
     res.json(report);
