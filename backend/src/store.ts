@@ -1,29 +1,42 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import type { Engagement, TrailBundle } from './engine/types';
 import type { EvalReport } from './eval/harness';
 
-// Minimal JSON-file persistence for the MVP. The platform is meant to write
-// findings back to the client's QMS/GRC system of record, not to become one,
-// so this only holds working state and the audit trail. Swap for Postgres /
-// Dataverse behind the same methods for production.
+// Working state is held in memory and written through to a Persistence
+// adapter on every change. The platform writes findings back to the client's
+// QMS/GRC system of record; it does not try to become one.
 
-interface Data {
+export interface Data {
   engagements: Engagement[];
   trail: TrailBundle[];
   evalRuns: EvalReport[];
 }
 
-export class Store {
-  private data: Data = { engagements: [], trail: [], evalRuns: [] };
+/** Port implemented by each storage backend (see src/persistence). */
+export interface Persistence {
+  readonly kind: string;
+  load(): Promise<Data>;
+  saveEngagement(e: Engagement): Promise<void>;
+  appendTrail(b: TrailBundle): Promise<void>;
+  saveEvalRun(r: EvalReport): Promise<void>;
+  healthy(): Promise<boolean>;
+  close(): Promise<void>;
+}
 
-  /** Pass null for an in-memory store (tests). */
-  constructor(private file: string | null) {
-    if (file && fs.existsSync(file)) {
-      this.data = { ...this.data, ...JSON.parse(fs.readFileSync(file, 'utf8')) };
-    }
+export class Store {
+  private data: Data;
+
+  /** Without a persistence adapter the store is in-memory only (tests, eval). */
+  constructor(private persistence: Persistence | null = null, data?: Data) {
+    this.data = data ?? { engagements: [], trail: [], evalRuns: [] };
   }
 
+  static async open(persistence: Persistence): Promise<Store> {
+    return new Store(persistence, await persistence.load());
+  }
+
+  get kind() {
+    return this.persistence?.kind ?? 'memory';
+  }
   get engagements() {
     return this.data.engagements;
   }
@@ -38,11 +51,26 @@ export class Store {
     return this.data.engagements.find((e) => e.id === id);
   }
 
-  save() {
-    if (!this.file) return;
-    fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
-    fs.renameSync(tmp, this.file);
+  async saveEngagement(e: Engagement) {
+    if (!this.data.engagements.includes(e)) this.data.engagements.push(e);
+    await this.persistence?.saveEngagement(e);
+  }
+
+  async appendTrail(b: TrailBundle) {
+    this.data.trail.push(b);
+    await this.persistence?.appendTrail(b);
+  }
+
+  async addEvalRun(r: EvalReport) {
+    this.data.evalRuns.push(r);
+    await this.persistence?.saveEvalRun(r);
+  }
+
+  healthy() {
+    return this.persistence ? this.persistence.healthy() : Promise.resolve(true);
+  }
+
+  close() {
+    return this.persistence ? this.persistence.close() : Promise.resolve();
   }
 }

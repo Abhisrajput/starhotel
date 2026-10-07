@@ -44,14 +44,14 @@ async function runFieldCase(registry: PackRegistry, models: ModelRouter, pack: C
   const [auditor] = USERS;
   const control = registry.controls.get(input.controlId);
   if (!control) throw new Error(`Eval case references unknown control ${input.controlId}`);
-  const e = svc.createEngagement(
+  const e = await svc.createEngagement(
     { name: 'eval', entity: 'eval', site: 'eval', periodFrom: '2026-01-01', periodTo: '2026-06-30', auditType: 'eval', scopeStatement: control.title, packIds: [control.packId] },
     auditor,
   );
   await svc.runModule(e.id, 'scope', auditor);
-  svc.setScope(e.id, e.scope.map((s) => ({ controlId: s.controlId, included: s.controlId === input.controlId })), auditor);
+  await svc.setScope(e.id, e.scope.map((s) => ({ controlId: s.controlId, included: s.controlId === input.controlId })), auditor);
   await svc.runModule(e.id, 'rcm', auditor);
-  svc.recordTest(e.id, input.controlId, { designAdequate: input.designAdequate, observation: input.observation, evidenceRefs: input.evidenceRefs, sampleTested: input.sampleTested, exceptions: input.exceptions }, auditor);
+  await svc.recordTest(e.id, input.controlId, { designAdequate: input.designAdequate, observation: input.observation, evidenceRefs: input.evidenceRefs, sampleTested: input.sampleTested, exceptions: input.exceptions }, auditor);
   await svc.runModule(e.id, 'testing', auditor);
   if (withGaps) await svc.runModule(e.id, 'gaps', auditor);
   return svc.engagement(e.id);

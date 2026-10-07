@@ -2,6 +2,8 @@ import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { evalMarkdown, runEval } from './eval/harness';
+import { authMiddleware, demoAuth, type Authenticator } from './auth';
+import type { User } from './engine/types';
 import { AppError, AuditService, USERS } from './service';
 import { buildTraceability } from './validation/traceability';
 
@@ -37,18 +39,32 @@ const FindingPatchSchema = z
   })
   .partial();
 
-export function createApp(svc: AuditService) {
+export function createApp(svc: AuditService, auth: Authenticator = demoAuth()) {
   const app = express();
   app.use(cors());
   app.use(express.json({ limit: '1mb' }));
+  app.use(authMiddleware(auth));
 
-  const actor = (req: Request) => svc.user(req.header('x-user-id'));
+  const actor = (_req: Request): User => {
+    const u = _req.res?.locals.user as User | null | undefined;
+    if (!u) throw new AppError(401, 'Sign-in required');
+    return u;
+  };
   const param = (req: Request, name: string) => String(req.params[name]);
   const wrap = (fn: (req: Request, res: Response) => unknown) => (req: Request, res: Response, next: NextFunction) =>
     Promise.resolve(fn(req, res)).catch(next);
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, provider: svc.providerInfo, models: svc.models.describe() }));
-  app.get('/api/users', (_req, res) => res.json(USERS));
+  // Liveness and readiness probes for any orchestrator (Container Apps, ECS, Cloud Run, Kubernetes).
+  app.get('/api/healthz', (_req, res) => res.json({ ok: true }));
+  app.get('/api/readyz', wrap(async (_req, res) => {
+    const storage = await svc.store.healthy();
+    res.status(storage ? 200 : 503).json({ ok: storage, storage: svc.store.kind });
+  }));
+  app.get('/api/config', (_req, res) => res.json({ auth: auth.clientConfig }));
+  // Demo mode lists the switchable demo users; with OIDC it returns the signed-in user only.
+  app.get('/api/users', (_req, res) => res.json(auth.mode === 'demo' ? USERS : [res.locals.user].filter(Boolean)));
+  app.get('/api/me', (_req, res) => res.json(res.locals.user ?? null));
   app.get('/api/modules', (_req, res) => res.json(svc.modules()));
 
   // ----- Content library -----
@@ -77,9 +93,9 @@ export function createApp(svc: AuditService) {
       blocked: e.findings.filter((f) => f.status === 'blocked').length,
       tested: Object.values(e.testResults).filter((r) => r.conclusion !== 'Not tested').length }))),
   );
-  app.post('/api/engagements', wrap((req, res) => {
+  app.post('/api/engagements', wrap(async (req, res) => {
     const body = NewEngagementSchema.parse(req.body);
-    res.status(201).json(svc.createEngagement(body, actor(req)));
+    res.status(201).json(await svc.createEngagement(body, actor(req)));
   }));
   app.get('/api/engagements/:id', wrap((req, res) => res.json(svc.engagement(param(req, 'id')))));
 
@@ -88,22 +104,22 @@ export function createApp(svc: AuditService) {
     res.json({ bundle, engagement });
   }));
 
-  app.put('/api/engagements/:id/scope', wrap((req, res) => {
+  app.put('/api/engagements/:id/scope', wrap(async (req, res) => {
     const items = z.array(z.object({ controlId: z.string(), included: z.boolean() })).parse(req.body.items);
-    res.json(svc.setScope(param(req, 'id'), items, actor(req)));
+    res.json(await svc.setScope(param(req, 'id'), items, actor(req)));
   }));
 
-  app.put('/api/engagements/:id/tests/:rowId', wrap((req, res) => {
-    res.json(svc.recordTest(param(req, 'id'), param(req, 'rowId'), TestInputSchema.parse(req.body), actor(req)));
+  app.put('/api/engagements/:id/tests/:rowId', wrap(async (req, res) => {
+    res.json(await svc.recordTest(param(req, 'id'), param(req, 'rowId'), TestInputSchema.parse(req.body), actor(req)));
   }));
 
-  app.put('/api/engagements/:id/findings/:fid', wrap((req, res) => {
-    res.json(svc.editFinding(param(req, 'id'), param(req, 'fid'), FindingPatchSchema.parse(req.body), actor(req)));
+  app.put('/api/engagements/:id/findings/:fid', wrap(async (req, res) => {
+    res.json(await svc.editFinding(param(req, 'id'), param(req, 'fid'), FindingPatchSchema.parse(req.body), actor(req)));
   }));
 
-  app.post('/api/engagements/:id/findings/:fid/signoff', wrap((req, res) => {
+  app.post('/api/engagements/:id/findings/:fid/signoff', wrap(async (req, res) => {
     const body = z.object({ action: z.enum(['review', 'approve', 'reject']), comment: z.string().default('') }).parse(req.body);
-    res.json(svc.signOff(param(req, 'id'), param(req, 'fid'), body.action, body.comment, actor(req)));
+    res.json(await svc.signOff(param(req, 'id'), param(req, 'fid'), body.action, body.comment, actor(req)));
   }));
 
   app.get('/api/engagements/:id/report.md', wrap((req, res) => {
@@ -122,8 +138,7 @@ export function createApp(svc: AuditService) {
 
   app.post('/api/eval/run', wrap(async (_req, res) => {
     const report = await runEval(svc.registry, svc.models);
-    svc.store.evalRuns.push(report);
-    svc.store.save();
+    await svc.store.addEvalRun(report);
     res.json(report);
   }));
   app.get('/api/eval/runs', (_req, res) => res.json(svc.store.evalRuns.map(({ cases, ...r }) => r).reverse()));

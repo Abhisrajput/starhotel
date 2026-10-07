@@ -8,7 +8,8 @@ describe('HTTP API', () => {
   const as = (user: string) => ({ 'x-user-id': user });
 
   it('runs a full engagement end to end over HTTP [REQ-06, REQ-15]', async () => {
-    expect((await request(app).post('/api/engagements').send({}).set(as('nobody'))).status).toBe(400);
+    expect((await request(app).post('/api/engagements').send({}).set(as('nobody'))).status).toBe(401);
+    expect((await request(app).post('/api/engagements').send({}).set(as('auditor'))).status).toBe(400);
 
     const created = await request(app).post('/api/engagements').set(as('auditor')).send({
       name: 'Pharma self-inspection', entity: 'Demo Pharma', site: 'OSD plant', periodFrom: '2026-01-01', periodTo: '2026-06-30',

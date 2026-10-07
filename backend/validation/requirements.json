@@ -1,17 +1,106 @@
 [
-  { "id": "REQ-01", "risk": "High", "text": "Every RCM row cites at least one clause that exists in the loaded regulatory corpus.", "evalKinds": [] },
-  { "id": "REQ-02", "risk": "High", "text": "A finding is released only with triple citation (regulatory clause, control, evidence reference); otherwise it is blocked.", "evalKinds": ["gaps"] },
-  { "id": "REQ-03", "risk": "High", "text": "A finding may not cite a clause outside the grounding set retrieved for it, or a clause absent from the corpus.", "evalKinds": [] },
-  { "id": "REQ-04", "risk": "High", "text": "A test conclusion of Effective cannot stand when exceptions were recorded.", "evalKinds": ["testing"] },
-  { "id": "REQ-05", "risk": "High", "text": "A test conclusion of Effective requires at least one evidence reference.", "evalKinds": ["testing"] },
-  { "id": "REQ-06", "risk": "High", "text": "Every module execution and human action writes an audit-trail bundle with inputs, retrieval set, execution log, QA actions, output, actor and versions.", "evalKinds": [] },
-  { "id": "REQ-07", "risk": "High", "text": "The audit trail is tamper-evident: any change to a past bundle is detected by chain verification.", "evalKinds": [] },
-  { "id": "REQ-08", "risk": "High", "text": "Findings require review by a reviewer, then approval by a different approver; each sign-off records name, role, meaning and time.", "evalKinds": [] },
-  { "id": "REQ-09", "risk": "Medium", "text": "Approved findings are locked against edit and regeneration.", "evalKinds": [] },
-  { "id": "REQ-10", "risk": "High", "text": "The audit report includes approved findings only; others are listed as excluded.", "evalKinds": [] },
-  { "id": "REQ-11", "risk": "Medium", "text": "Modules run only in chain order (scope, RCM, testing, gaps, report).", "evalKinds": [] },
-  { "id": "REQ-12", "risk": "Medium", "text": "Content packs are schema-validated on load; a control citing an unknown clause is rejected.", "evalKinds": [] },
-  { "id": "REQ-13", "risk": "High", "text": "Retrieval returns the expert-expected clauses for labelled queries.", "evalKinds": ["retrieval"] },
-  { "id": "REQ-14", "risk": "Medium", "text": "Model output is constrained: controls outside the library are rejected, and a failed model call falls back to deterministic rules with a QA flag.", "evalKinds": [] },
-  { "id": "REQ-15", "risk": "Medium", "text": "Actions are restricted by role (auditor, reviewer, approver).", "evalKinds": [] }
+  {
+    "id": "REQ-01",
+    "risk": "High",
+    "text": "Every RCM row cites at least one clause that exists in the loaded regulatory corpus.",
+    "evalKinds": []
+  },
+  {
+    "id": "REQ-02",
+    "risk": "High",
+    "text": "A finding is released only with triple citation (regulatory clause, control, evidence reference); otherwise it is blocked.",
+    "evalKinds": [
+      "gaps"
+    ]
+  },
+  {
+    "id": "REQ-03",
+    "risk": "High",
+    "text": "A finding may not cite a clause outside the grounding set retrieved for it, or a clause absent from the corpus.",
+    "evalKinds": []
+  },
+  {
+    "id": "REQ-04",
+    "risk": "High",
+    "text": "A test conclusion of Effective cannot stand when exceptions were recorded.",
+    "evalKinds": [
+      "testing"
+    ]
+  },
+  {
+    "id": "REQ-05",
+    "risk": "High",
+    "text": "A test conclusion of Effective requires at least one evidence reference.",
+    "evalKinds": [
+      "testing"
+    ]
+  },
+  {
+    "id": "REQ-06",
+    "risk": "High",
+    "text": "Every module execution and human action writes an audit-trail bundle with inputs, retrieval set, execution log, QA actions, output, actor and versions.",
+    "evalKinds": []
+  },
+  {
+    "id": "REQ-07",
+    "risk": "High",
+    "text": "The audit trail is tamper-evident: any change to a past bundle is detected by chain verification.",
+    "evalKinds": []
+  },
+  {
+    "id": "REQ-08",
+    "risk": "High",
+    "text": "Findings require review by a reviewer, then approval by a different approver; each sign-off records name, role, meaning and time.",
+    "evalKinds": []
+  },
+  {
+    "id": "REQ-09",
+    "risk": "Medium",
+    "text": "Approved findings are locked against edit and regeneration.",
+    "evalKinds": []
+  },
+  {
+    "id": "REQ-10",
+    "risk": "High",
+    "text": "The audit report includes approved findings only; others are listed as excluded.",
+    "evalKinds": []
+  },
+  {
+    "id": "REQ-11",
+    "risk": "Medium",
+    "text": "Modules run only in chain order (scope, RCM, testing, gaps, report).",
+    "evalKinds": []
+  },
+  {
+    "id": "REQ-12",
+    "risk": "Medium",
+    "text": "Content packs are schema-validated on load; a control citing an unknown clause is rejected.",
+    "evalKinds": []
+  },
+  {
+    "id": "REQ-13",
+    "risk": "High",
+    "text": "Retrieval returns the expert-expected clauses for labelled queries.",
+    "evalKinds": [
+      "retrieval"
+    ]
+  },
+  {
+    "id": "REQ-14",
+    "risk": "Medium",
+    "text": "Model output is constrained: controls outside the library are rejected, and a failed model call falls back to deterministic rules with a QA flag.",
+    "evalKinds": []
+  },
+  {
+    "id": "REQ-15",
+    "risk": "Medium",
+    "text": "Actions are restricted by role (auditor, reviewer, approver).",
+    "evalKinds": []
+  },
+  {
+    "id": "REQ-16",
+    "risk": "High",
+    "text": "Working state and the audit trail are persisted and survive a restart; in PostgreSQL the trail table rejects updates and deletes.",
+    "evalKinds": []
+  }
 ]

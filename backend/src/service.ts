@@ -51,12 +51,6 @@ export class AuditService {
     return this.models.describe().default;
   }
 
-  user(id: string | undefined): User {
-    const u = USERS.find((x) => x.id === id);
-    if (!u) throw new AppError(401, 'Unknown user; send x-user-id header');
-    return u;
-  }
-
   private require(user: User, roles: string[], what: string) {
     if (!roles.includes(user.role)) throw new AppError(403, `${user.role} may not ${what}`);
   }
@@ -67,7 +61,7 @@ export class AuditService {
     return e;
   }
 
-  createEngagement(input: NewEngagement, actor: User): Engagement {
+  async createEngagement(input: NewEngagement, actor: User): Promise<Engagement> {
     this.require(actor, PREPARERS, 'create engagements');
     if (!input.packIds.length) throw new AppError(400, 'Select at least one content pack');
     input.packIds.forEach((id) => {
@@ -86,8 +80,8 @@ export class AuditService {
       findings: [],
       report: null,
     };
-    this.store.engagements.push(e);
-    this.recordHuman(e, 'human:create-engagement', actor, input, { id: e.id });
+    await this.store.saveEngagement(e);
+    await this.recordHuman(e, 'human:create-engagement', actor, input, { id: e.id });
     return e;
   }
 
@@ -113,7 +107,7 @@ export class AuditService {
     const output = await mod.run(ctx);
     ctx.step('end', `${ctx.qa.filter((q) => q.outcome === 'fail').length} gate failure(s), ${ctx.qa.filter((q) => q.outcome === 'warn').length} warning(s)`);
 
-    const bundle = this.append({
+    const bundle = await this.append({
       id: `RUN-${crypto.randomBytes(4).toString('hex')}`,
       engagementId: e.id,
       moduleId: mod.id,
@@ -132,13 +126,13 @@ export class AuditService {
       output,
     });
     mod.apply(e, output, bundle.id);
-    this.store.save();
+    await this.store.saveEngagement(e);
     return { bundle, engagement: e };
   }
 
   // ---------- Human steps (also written to the trail) ----------
 
-  setScope(engagementId: string, items: { controlId: string; included: boolean }[], actor: User) {
+  async setScope(engagementId: string, items: { controlId: string; included: boolean }[], actor: User) {
     this.require(actor, PREPARERS, 'change scope');
     const e = this.engagement(engagementId);
     for (const it of items) {
@@ -146,11 +140,12 @@ export class AuditService {
       if (!s) throw new AppError(400, `Control ${it.controlId} is not a scope candidate`);
       s.included = it.included;
     }
-    this.recordHuman(e, 'human:scope-decision', actor, items, { included: e.scope.filter((s) => s.included).map((s) => s.controlId) });
+    await this.store.saveEngagement(e);
+    await this.recordHuman(e, 'human:scope-decision', actor, items, { included: e.scope.filter((s) => s.included).map((s) => s.controlId) });
     return e;
   }
 
-  recordTest(engagementId: string, rowId: string, input: Omit<TestInput, 'updatedBy' | 'updatedAt'>, actor: User) {
+  async recordTest(engagementId: string, rowId: string, input: Omit<TestInput, 'updatedBy' | 'updatedAt'>, actor: User) {
     this.require(actor, PREPARERS, 'record test work');
     const e = this.engagement(engagementId);
     if (!e.rcm.some((r) => r.id === rowId)) throw new AppError(404, `RCM row ${rowId} not found`);
@@ -158,11 +153,12 @@ export class AuditService {
     const record: TestInput = { ...input, updatedBy: actor.id, updatedAt: new Date().toISOString() };
     e.testInputs[rowId] = record;
     delete e.testResults[rowId];
-    this.recordHuman(e, 'human:test-record', actor, { rowId, ...input }, record);
+    await this.store.saveEngagement(e);
+    await this.recordHuman(e, 'human:test-record', actor, { rowId, ...input }, record);
     return e;
   }
 
-  editFinding(engagementId: string, findingId: string, patch: Partial<Pick<Finding, 'title' | 'rating' | 'condition' | 'criteria' | 'cause' | 'effect' | 'recommendation' | 'evidenceRefs'>>, actor: User) {
+  async editFinding(engagementId: string, findingId: string, patch: Partial<Pick<Finding, 'title' | 'rating' | 'condition' | 'criteria' | 'cause' | 'effect' | 'recommendation' | 'evidenceRefs'>>, actor: User) {
     this.require(actor, PREPARERS, 'edit findings');
     const e = this.engagement(engagementId);
     const idx = e.findings.findIndex((f) => f.id === findingId);
@@ -173,11 +169,12 @@ export class AuditService {
     const edited: Finding = { ...e.findings[idx], ...patch, status: 'draft', signOffs: [] };
     const { finding, actions } = findingCitationGate(this.registry, edited, allowed);
     e.findings[idx] = finding;
-    this.recordHuman(e, 'human:finding-edit', actor, { findingId, patch }, { status: finding.status }, actions);
+    await this.store.saveEngagement(e);
+    await this.recordHuman(e, 'human:finding-edit', actor, { findingId, patch }, { status: finding.status }, actions);
     return finding;
   }
 
-  signOff(engagementId: string, findingId: string, action: 'review' | 'approve' | 'reject', comment: string, actor: User) {
+  async signOff(engagementId: string, findingId: string, action: 'review' | 'approve' | 'reject', comment: string, actor: User) {
     const e = this.engagement(engagementId);
     const f = e.findings.find((x) => x.id === findingId);
     if (!f) throw new AppError(404, `Finding ${findingId} not found`);
@@ -199,21 +196,24 @@ export class AuditService {
     // Signature manifestation: who, in what role, what it means, and when.
     const sig: SignOff = { userId: actor.id, userName: actor.name, role: actor.role, meaning, comment, at: new Date().toISOString() };
     f.signOffs.push(sig);
-    this.recordHuman(e, 'human:sign-off', actor, { findingId, action, comment }, sig);
+    await this.store.saveEngagement(e);
+    await this.recordHuman(e, 'human:sign-off', actor, { findingId, action, comment }, sig);
     return f;
   }
 
   // ---------- Trail ----------
 
-  private append(bundle: Omit<TrailBundle, 'hash' | 'prevHash' | 'seq'>): TrailBundle {
+  private async append(bundle: Omit<TrailBundle, 'hash' | 'prevHash' | 'seq'>): Promise<TrailBundle> {
+    // seal() and the in-memory push happen synchronously, so concurrent
+    // requests cannot fork the chain; persistence then catches up in order.
     const sealed = seal(this.store.trail, bundle);
-    this.store.trail.push(sealed);
+    await this.store.appendTrail(sealed);
     return sealed;
   }
 
-  private recordHuman(e: Engagement, moduleId: string, actor: User, inputs: unknown, output: unknown, qaActions: QaAction[] = []) {
+  private async recordHuman(e: Engagement, moduleId: string, actor: User, inputs: unknown, output: unknown, qaActions: QaAction[] = []) {
     const now = new Date().toISOString();
-    this.append({
+    await this.append({
       id: `HUM-${crypto.randomBytes(4).toString('hex')}`,
       engagementId: e.id,
       moduleId,
@@ -231,7 +231,6 @@ export class AuditService {
       qaActions,
       output,
     });
-    this.store.save();
   }
 
   trailFor(engagementId: string) {

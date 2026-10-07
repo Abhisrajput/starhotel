@@ -20,14 +20,14 @@ describe('content packs', () => {
 describe('module chain', () => {
   it('enforces chain order [REQ-11]', async () => {
     const svc = newService();
-    const e = svc.createEngagement({ name: 'x', entity: 'x', site: 'x', periodFrom: 'a', periodTo: 'b', auditType: 'x', scopeStatement: 'hedging limits', packIds: ['common'] }, auditor);
+    const e = await svc.createEngagement({ name: 'x', entity: 'x', site: 'x', periodFrom: 'a', periodTo: 'b', auditType: 'x', scopeStatement: 'hedging limits', packIds: ['common'] }, auditor);
     await expect(svc.runModule(e.id, 'rcm', auditor)).rejects.toThrow(/Risk & Scope/);
     await expect(svc.runModule(e.id, 'testing', auditor)).rejects.toThrow(/field work/);
   });
 
   it('scope ranks treasury controls for a hedging scope', async () => {
     const svc = newService();
-    const e = svc.createEngagement({ name: 'x', entity: 'x', site: 'x', periodFrom: 'a', periodTo: 'b', auditType: 'Treasury', scopeStatement: 'Commodity hedging: positions against limits, trade confirmations and hedge documentation', packIds: ['common'] }, auditor);
+    const e = await svc.createEngagement({ name: 'x', entity: 'x', site: 'x', periodFrom: 'a', periodTo: 'b', auditType: 'Treasury', scopeStatement: 'Commodity hedging: positions against limits, trade confirmations and hedge documentation', packIds: ['common'] }, auditor);
     await svc.runModule(e.id, 'scope', auditor);
     const included = svc.engagement(e.id).scope.filter((s) => s.included).map((s) => s.controlId);
     expect(included).toEqual(expect.arrayContaining(['CMN-TRS-02', 'CMN-TRS-03', 'CMN-TRS-04']));
@@ -63,7 +63,7 @@ describe('QA gates', () => {
   it('downgrades Effective without evidence to Not tested [REQ-05]', async () => {
     const svc = newService();
     const e = await engagementWithFailedControl(svc);
-    svc.recordTest(e.id, 'FD-HACCP-03', { designAdequate: true, observation: 'All logs signed.', evidenceRefs: [], sampleTested: 20, exceptions: 0 }, auditor);
+    await svc.recordTest(e.id, 'FD-HACCP-03', { designAdequate: true, observation: 'All logs signed.', evidenceRefs: [], sampleTested: 20, exceptions: 0 }, auditor);
     await svc.runModule(e.id, 'testing', auditor);
     expect(svc.engagement(e.id).testResults['FD-HACCP-03'].conclusion).toBe('Not tested');
   });
@@ -74,7 +74,7 @@ describe('QA gates', () => {
     const f = e.findings[0];
     expect(f.status).toBe('blocked');
     expect(f.blockedReasons.join()).toMatch(/evidence/);
-    expect(() => svc.signOff(e.id, f.id, 'review', '', reviewer)).toThrow(/blocked/);
+    await expect(svc.signOff(e.id, f.id, 'review', '', reviewer)).rejects.toThrow(/blocked/);
   });
 
   it('releases a finding with clause, control and evidence citations [REQ-02]', async () => {
@@ -103,7 +103,7 @@ describe('QA gates', () => {
   it('rejects model-proposed controls not in the library [REQ-14]', async () => {
     const llm = new FakeProvider((req) => (req.user.includes('Candidate controls') ? { items: [{ controlId: 'MADE-UP-1', included: true, rationale: 'x' }] } : { rows: [], results: [], findings: [] }));
     const svc = newService(llm);
-    const e = svc.createEngagement({ name: 'x', entity: 'x', site: 'x', periodFrom: 'a', periodTo: 'b', auditType: 'x', scopeStatement: 'hedging', packIds: ['common'] }, auditor);
+    const e = await svc.createEngagement({ name: 'x', entity: 'x', site: 'x', periodFrom: 'a', periodTo: 'b', auditType: 'x', scopeStatement: 'hedging', packIds: ['common'] }, auditor);
     const { bundle } = await svc.runModule(e.id, 'scope', auditor);
     expect(svc.engagement(e.id).scope.some((s) => s.controlId === 'MADE-UP-1')).toBe(false);
     expect(bundle.qaActions).toContainEqual(expect.objectContaining({ gate: 'library-only', outcome: 'fail' }));
@@ -114,7 +114,7 @@ describe('QA gates', () => {
   it('falls back to deterministic rules with a QA flag when the model fails [REQ-14]', async () => {
     const broken = { id: 'broken', model: 'b', generate: async () => { throw new Error('upstream 529'); } };
     const svc = newService(broken);
-    const e = svc.createEngagement({ name: 'x', entity: 'x', site: 'x', periodFrom: 'a', periodTo: 'b', auditType: 'x', scopeStatement: 'hedging limits', packIds: ['common'] }, auditor);
+    const e = await svc.createEngagement({ name: 'x', entity: 'x', site: 'x', periodFrom: 'a', periodTo: 'b', auditType: 'x', scopeStatement: 'hedging limits', packIds: ['common'] }, auditor);
     const { bundle } = await svc.runModule(e.id, 'scope', auditor);
     expect(svc.engagement(e.id).scope.length).toBeGreaterThan(0);
     expect(bundle.qaActions).toContainEqual(expect.objectContaining({ gate: 'model-availability', outcome: 'warn' }));
@@ -126,11 +126,11 @@ describe('sign-off and release', () => {
     const svc = newService();
     const e = await engagementWithFailedControl(svc);
     const f = e.findings[0];
-    expect(() => svc.signOff(e.id, f.id, 'approve', '', approver)).toThrow(/reviewed before/);
-    expect(() => svc.signOff(e.id, f.id, 'review', '', auditor)).toThrow(/may not/);
-    svc.signOff(e.id, f.id, 'review', 'ok', reviewer);
-    expect(() => svc.signOff(e.id, f.id, 'approve', '', reviewer)).toThrow(/may not/);
-    const done = svc.signOff(e.id, f.id, 'approve', 'agreed', approver);
+    await expect(svc.signOff(e.id, f.id, 'approve', '', approver)).rejects.toThrow(/reviewed before/);
+    await expect(svc.signOff(e.id, f.id, 'review', '', auditor)).rejects.toThrow(/may not/);
+    await svc.signOff(e.id, f.id, 'review', 'ok', reviewer);
+    await expect(svc.signOff(e.id, f.id, 'approve', '', reviewer)).rejects.toThrow(/may not/);
+    const done = await svc.signOff(e.id, f.id, 'approve', 'agreed', approver);
     expect(done.status).toBe('approved');
     expect(done.signOffs.map((s) => [s.userId, s.role, s.meaning])).toEqual([
       ['reviewer', 'reviewer', 'Reviewed'],
@@ -143,9 +143,9 @@ describe('sign-off and release', () => {
     const svc = newService();
     const e = await engagementWithFailedControl(svc);
     const f = e.findings[0];
-    svc.signOff(e.id, f.id, 'review', '', reviewer);
-    svc.signOff(e.id, f.id, 'approve', '', approver);
-    expect(() => svc.editFinding(e.id, f.id, { title: 'changed' }, auditor)).toThrow(/locked/);
+    await svc.signOff(e.id, f.id, 'review', '', reviewer);
+    await svc.signOff(e.id, f.id, 'approve', '', approver);
+    await expect(svc.editFinding(e.id, f.id, { title: 'changed' }, auditor)).rejects.toThrow(/locked/);
     await svc.runModule(e.id, 'gaps', auditor);
     expect(svc.engagement(e.id).findings.find((x) => x.id === f.id)?.title).toBe(f.title);
   });
@@ -154,8 +154,8 @@ describe('sign-off and release', () => {
     const svc = newService();
     const e = await engagementWithFailedControl(svc);
     const f = e.findings[0];
-    svc.signOff(e.id, f.id, 'review', '', reviewer);
-    const edited = svc.editFinding(e.id, f.id, { evidenceRefs: [] }, auditor);
+    await svc.signOff(e.id, f.id, 'review', '', reviewer);
+    const edited = await svc.editFinding(e.id, f.id, { evidenceRefs: [] }, auditor);
     expect(edited.status).toBe('blocked');
     expect(edited.signOffs).toEqual([]);
   });
@@ -167,8 +167,8 @@ describe('sign-off and release', () => {
     await svc.runModule(e.id, 'report', auditor);
     expect(svc.engagement(e.id).report!.includedFindingIds).toEqual([]);
     expect(svc.engagement(e.id).report!.excludedFindingIds).toEqual([f.id]);
-    svc.signOff(e.id, f.id, 'review', '', reviewer);
-    svc.signOff(e.id, f.id, 'approve', '', approver);
+    await svc.signOff(e.id, f.id, 'review', '', reviewer);
+    await svc.signOff(e.id, f.id, 'approve', '', approver);
     await svc.runModule(e.id, 'report', auditor);
     const report = svc.engagement(e.id).report!;
     expect(report.includedFindingIds).toEqual([f.id]);
@@ -200,8 +200,8 @@ describe('audit trail', () => {
     await engagementWithFailedControl(svc);
     // Later human actions must not alter evidence already sealed in the chain.
     const e = svc.store.engagements[0];
-    svc.signOff(e.id, e.findings[0].id, 'review', '', reviewer);
-    svc.setScope(e.id, e.scope.map((s) => ({ controlId: s.controlId, included: !s.included })), auditor);
+    await svc.signOff(e.id, e.findings[0].id, 'review', '', reviewer);
+    await svc.setScope(e.id, e.scope.map((s) => ({ controlId: s.controlId, included: !s.included })), auditor);
     expect(svc.verifyTrail().valid).toBe(true);
     const chain = svc.store.trail;
     (chain[2].output as any) = { tampered: true };
