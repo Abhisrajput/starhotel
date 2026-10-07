@@ -1,80 +1,140 @@
-import express from 'express';
 import cors from 'cors';
-import { createServer } from 'http';
-import authRouter from './modules/auth/auth.controller';
-import roomsRouter from './modules/rooms/rooms.controller';
-import bookingsRouter from './modules/bookings/bookings.controller';
-import adminRouter from './modules/admin/admin.controller';
-import reportsRouter from './modules/reports/reports.controller';
-import { initDashboardGateway } from './modules/dashboard/dashboard.gateway';
-import { AppError } from './shared/errors';
-import logger from './shared/logger';
-import prisma from './shared/database';
+import express, { type NextFunction, type Request, type Response } from 'express';
+import { z } from 'zod';
+import { evalMarkdown, runEval } from './eval/harness';
+import { AppError, AuditService, USERS } from './service';
+import { buildTraceability } from './validation/traceability';
 
-const app = express();
-const httpServer = createServer(app);
-
-// Middleware
-app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173', credentials: true }));
-app.use(express.json());
-
-// Request logging
-app.use((req, _res, next) => {
-  logger.info({ method: req.method, url: req.url }, 'Request');
-  next();
+const NewEngagementSchema = z.object({
+  name: z.string().min(1),
+  entity: z.string().min(1),
+  site: z.string().min(1),
+  periodFrom: z.string().min(1),
+  periodTo: z.string().min(1),
+  auditType: z.string().min(1),
+  scopeStatement: z.string().min(1),
+  packIds: z.array(z.string()).min(1),
 });
 
-// Health check
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+const TestInputSchema = z.object({
+  designAdequate: z.boolean().nullable(),
+  observation: z.string(),
+  evidenceRefs: z.array(z.string().min(1)),
+  sampleTested: z.number().int().min(0),
+  exceptions: z.number().int().min(0),
 });
 
-// Routes
-app.use('/api/auth', authRouter);
-app.use('/api/rooms', roomsRouter);
-app.use('/api/bookings', bookingsRouter);
-app.use('/api/admin', adminRouter);
-app.use('/api/reports', reportsRouter);
+const FindingPatchSchema = z
+  .object({
+    title: z.string().min(1),
+    rating: z.enum(['High', 'Medium', 'Low']),
+    condition: z.string().min(1),
+    criteria: z.string().min(1),
+    cause: z.string().min(1),
+    effect: z.string().min(1),
+    recommendation: z.string().min(1),
+    evidenceRefs: z.array(z.string().min(1)),
+  })
+  .partial();
 
-// Dashboard status endpoint (separate from rooms for clarity)
-app.get('/api/dashboard/status', async (req, res, next) => {
-  try {
-    const { roomsService } = await import('./modules/rooms/rooms.service');
-    const status = await roomsService.getDashboardStatus();
-    res.json(status);
-  } catch (err) { next(err); }
-});
+export function createApp(svc: AuditService) {
+  const app = express();
+  app.use(cors());
+  app.use(express.json({ limit: '1mb' }));
 
-// Global error handler
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  if (err instanceof AppError) {
-    res.status(err.statusCode).json({ error: err.message, code: err.code });
-  } else {
-    logger.error(err, 'Unhandled error');
-    res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR' });
-  }
-});
+  const actor = (req: Request) => svc.user(req.header('x-user-id'));
+  const param = (req: Request, name: string) => String(req.params[name]);
+  const wrap = (fn: (req: Request, res: Response) => unknown) => (req: Request, res: Response, next: NextFunction) =>
+    Promise.resolve(fn(req, res)).catch(next);
 
-// Init Socket.IO for real-time dashboard — BR-15
-initDashboardGateway(httpServer);
+  app.get('/api/health', (_req, res) => res.json({ ok: true, provider: svc.providerInfo }));
+  app.get('/api/users', (_req, res) => res.json(USERS));
+  app.get('/api/modules', (_req, res) => res.json(svc.modules()));
 
-const PORT = parseInt(process.env.PORT || '3001', 10);
+  // ----- Content library -----
+  app.get('/api/packs', (_req, res) =>
+    res.json(svc.registry.list().map(({ clauses, controls, evalCases, ...p }) => ({ ...p, clauseCount: clauses.length, controlCount: controls.length, evalCaseCount: evalCases.length }))),
+  );
+  app.get('/api/packs/:id', wrap((req, res) => {
+    const pack = svc.registry.packs.get(param(req, 'id'));
+    if (!pack) throw new AppError(404, 'Pack not found');
+    res.json(pack);
+  }));
+  app.get('/api/search', (req, res) => {
+    const q = String(req.query.q ?? '');
+    const packIds = req.query.packs ? String(req.query.packs).split(',') : svc.registry.list().map((p) => p.id);
+    const allowed = new Set(svc.registry.clausesFor(packIds).map((c) => c.id));
+    const hits = svc.grounding.clauses.search(q, 10, (id) => allowed.has(id));
+    res.json(hits.map((h) => ({ ...h, clause: svc.registry.clauses.get(h.clauseId) })));
+  });
 
-async function start() {
-  try {
-    await prisma.$connect();
-    logger.info('Database connected');
+  // ----- Engagements -----
+  app.get('/api/engagements', (_req, res) =>
+    res.json(svc.store.engagements.map((e) => ({ id: e.id, name: e.name, entity: e.entity, site: e.site, auditType: e.auditType, packIds: e.packIds, stage: e.stage, createdAt: e.createdAt, findings: e.findings.length, rcm: e.rcm.length }))),
+  );
+  app.post('/api/engagements', wrap((req, res) => {
+    const body = NewEngagementSchema.parse(req.body);
+    res.status(201).json(svc.createEngagement(body, actor(req)));
+  }));
+  app.get('/api/engagements/:id', wrap((req, res) => res.json(svc.engagement(param(req, 'id')))));
 
-    httpServer.listen(PORT, () => {
-      logger.info(`Star Hotel Backend running on http://localhost:${PORT}`);
-      logger.info(`WebSocket server ready on ws://localhost:${PORT}`);
-    });
-  } catch (err) {
-    logger.error(err, 'Failed to start server');
-    process.exit(1);
-  }
+  app.post('/api/engagements/:id/modules/:moduleId/run', wrap(async (req, res) => {
+    const { bundle, engagement } = await svc.runModule(param(req, 'id'), param(req, 'moduleId'), actor(req), req.body ?? {});
+    res.json({ bundle, engagement });
+  }));
+
+  app.put('/api/engagements/:id/scope', wrap((req, res) => {
+    const items = z.array(z.object({ controlId: z.string(), included: z.boolean() })).parse(req.body.items);
+    res.json(svc.setScope(param(req, 'id'), items, actor(req)));
+  }));
+
+  app.put('/api/engagements/:id/tests/:rowId', wrap((req, res) => {
+    res.json(svc.recordTest(param(req, 'id'), param(req, 'rowId'), TestInputSchema.parse(req.body), actor(req)));
+  }));
+
+  app.put('/api/engagements/:id/findings/:fid', wrap((req, res) => {
+    res.json(svc.editFinding(param(req, 'id'), param(req, 'fid'), FindingPatchSchema.parse(req.body), actor(req)));
+  }));
+
+  app.post('/api/engagements/:id/findings/:fid/signoff', wrap((req, res) => {
+    const body = z.object({ action: z.enum(['review', 'approve', 'reject']), comment: z.string().default('') }).parse(req.body);
+    res.json(svc.signOff(param(req, 'id'), param(req, 'fid'), body.action, body.comment, actor(req)));
+  }));
+
+  app.get('/api/engagements/:id/report.md', wrap((req, res) => {
+    const e = svc.engagement(param(req, 'id'));
+    if (!e.report) throw new AppError(404, 'No report generated yet');
+    res.type('text/markdown').attachment(`${e.id}-report.md`).send(e.report.markdown);
+  }));
+
+  app.get('/api/engagements/:id/findings.csv', wrap((req, res) => {
+    res.type('text/csv').attachment(`${param(req, 'id')}-findings.csv`).send(svc.findingsCsv(param(req, 'id')));
+  }));
+
+  // ----- Evidence & validation -----
+  app.get('/api/engagements/:id/trail', wrap((req, res) => res.json(svc.trailFor(param(req, 'id')))));
+  app.get('/api/trail/verify', (_req, res) => res.json(svc.verifyTrail()));
+
+  app.post('/api/eval/run', wrap(async (_req, res) => {
+    const report = await runEval(svc.registry, svc.llm);
+    svc.store.evalRuns.push(report);
+    svc.store.save();
+    res.json(report);
+  }));
+  app.get('/api/eval/runs', (_req, res) => res.json(svc.store.evalRuns.map(({ cases, ...r }) => r).reverse()));
+  app.get('/api/eval/runs/:id', wrap((req, res) => {
+    const r = svc.store.evalRuns.find((x) => x.id === param(req, 'id'));
+    if (!r) throw new AppError(404, 'Eval run not found');
+    res.json({ ...r, markdown: evalMarkdown(r) });
+  }));
+  app.get('/api/validation/traceability', (_req, res) => res.json(buildTraceability(svc.store.evalRuns.at(-1) ?? null)));
+
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    if (err instanceof z.ZodError) return res.status(400).json({ error: 'Invalid request', issues: err.issues });
+    console.error(err);
+    res.status(500).json({ error: 'Internal error' });
+  });
+
+  return app;
 }
-
-start();
-
-export default app;
