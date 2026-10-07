@@ -2,6 +2,7 @@ import { Download as DownloadIcon, PlayArrow as PlayArrowIcon } from '@mui/icons
 import { Box, Button, Card, Stack, Typography } from '@mui/material';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { download } from '../../api';
 import type { TabProps } from '../../pages/EngagementPage';
 import { ActionButton, ModuleBar } from '../common';
 
@@ -10,11 +11,11 @@ export default function ReportTab({ engagement: e, run }: TabProps) {
     <Stack spacing={0}>
       <ModuleBar title="Report Writer" description="Compiles the report from approved findings only. Export for review or write back to the QMS / GRC system of record.">
         {e.report && (
-          <Button variant="outlined" startIcon={<DownloadIcon />} href={`/api/engagements/${e.id}/report.md`}>
+          <Button variant="outlined" startIcon={<DownloadIcon />} onClick={() => download(`/engagements/${e.id}/report.md`, `${e.id}-report.md`)}>
             Report (.md)
           </Button>
         )}
-        <Button variant="outlined" startIcon={<DownloadIcon />} href={`/api/engagements/${e.id}/findings.csv`}>
+        <Button variant="outlined" startIcon={<DownloadIcon />} onClick={() => download(`/engagements/${e.id}/findings.csv`, `${e.id}-findings.csv`)}>
           Findings (.csv)
         </Button>
         <ActionButton startIcon={<PlayArrowIcon />} action={() => run('report')}>

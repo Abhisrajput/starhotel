@@ -1,25 +1,38 @@
+# Local stack that mirrors the cloud deployment: the app container plus PostgreSQL.
 services:
-  backend:
-    build: ./backend
+  db:
+    image: postgres:16-alpine
     environment:
-      PORT: '3002'
-      DATA_FILE: /data/db.json
-      # offline (default, no key needed) | anthropic
-      LLM_PROVIDER: ${LLM_PROVIDER:-offline}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      POSTGRES_USER: audit
+      POSTGRES_PASSWORD: audit
+      POSTGRES_DB: audit
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U audit']
+      interval: 5s
+      retries: 10
     volumes:
-      - auditdata:/data
-    ports:
-      - '3002:3002'
+      - pgdata:/var/lib/postgresql/data
 
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
+  app:
+    build: .
     ports:
-      - '8080:80'
+      - '8080:8080'
+    environment:
+      STORAGE: postgres
+      DATABASE_URL: postgres://audit:audit@db:5432/audit
+      DATABASE_SSL: 'false'
+      SEED_DEMO: 'true'
+      AUTH_MODE: demo
+      # offline (no key needed) | azure-openai | anthropic-foundry | anthropic | anthropic-bedrock | anthropic-vertex | openai-compatible
+      LLM_DEFAULT: ${LLM_DEFAULT:-offline}
+      LLM_ROUTES: ${LLM_ROUTES:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
     depends_on:
-      - backend
+      db:
+        condition: service_healthy
 
 volumes:
-  auditdata:
+  pgdata:
