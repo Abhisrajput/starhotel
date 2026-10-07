@@ -1,0 +1,116 @@
+import { z } from 'zod';
+import type { AuditModule } from '../module';
+import type { AuditReport, Engagement, Finding, TestConclusion } from '../types';
+import { askModel, SYSTEM_PREAMBLE } from './llm-step';
+
+const ORDER = { High: 0, Medium: 1, Low: 2 } as const;
+
+function findingMd(f: Finding, n: number): string {
+  const signedBy = f.signOffs.map((s) => `${s.meaning} by ${s.userName} (${s.role}) on ${s.at.slice(0, 10)}`).join('; ');
+  return [
+    `### ${n}. ${f.title}`,
+    ``,
+    `**Rating:** ${f.rating} &nbsp; **Control:** ${f.controlId} &nbsp; **Sign-off:** ${signedBy || 'none'}`,
+    ``,
+    `- **Condition:** ${f.condition}`,
+    `- **Criteria:** ${f.criteria}`,
+    `- **Cause:** ${f.cause}`,
+    `- **Effect / risk:** ${f.effect}`,
+    `- **Recommendation:** ${f.recommendation}`,
+    ``,
+    `_Citations:_ ${f.citations.map((c) => `${c.regulation} ${c.ref}`).join('; ')} &nbsp; _Evidence:_ ${f.evidenceRefs.join(', ')} &nbsp; _Trail:_ ${f.bundleId}`,
+    ``,
+  ].join('\n');
+}
+
+export function defaultSummary(e: Engagement, approved: Finding[]): string {
+  const tested = Object.values(e.testResults).filter((r) => r.conclusion !== 'Not tested').length;
+  const byRating = (r: string) => approved.filter((f) => f.rating === r).length;
+  if (!approved.length) {
+    return `We tested ${tested} of ${e.rcm.length} in-scope controls. No approved findings are reported for this engagement.`;
+  }
+  return `We tested ${tested} of ${e.rcm.length} in-scope controls and report ${approved.length} approved finding(s): ${byRating('High')} High, ${byRating('Medium')} Medium and ${byRating('Low')} Low. Management actions are recommended for each finding below.`;
+}
+
+const ModelSummary = z.object({ executiveSummary: z.string() });
+
+/** Report Writer: compiles approved findings into the audit report. */
+export const reportModule: AuditModule<Omit<AuditReport, 'bundleId'>> = {
+  id: 'report',
+  name: 'Report Writer',
+  version: '0.1.0',
+  description: 'Compiles the report from approved findings only; unapproved or blocked findings are listed as excluded.',
+  precondition: (e) => (e.rcm.length ? null : 'Build the RCM first'),
+
+  async run(ctx) {
+    const e = ctx.engagement;
+    const approved = e.findings.filter((f) => f.status === 'approved').sort((a, b) => ORDER[a.rating] - ORDER[b.rating]);
+    const excluded = e.findings.filter((f) => f.status !== 'approved');
+    for (const f of excluded) {
+      ctx.gate({ gate: 'release', outcome: f.status === 'blocked' ? 'fail' : 'warn', target: f.id, detail: `Finding status "${f.status}" — excluded from report until approved`, action: 'blocked' });
+    }
+
+    let summary = defaultSummary(e, approved);
+    const drafted = await askModel(
+      ctx,
+      SYSTEM_PREAMBLE,
+      `Write a 3-5 sentence executive summary for the audit committee. Use only these facts.\n` +
+        JSON.stringify({ engagement: { name: e.name, entity: e.entity, site: e.site, period: `${e.periodFrom} to ${e.periodTo}`, scope: e.scopeStatement }, controlsInScope: e.rcm.length, findings: approved.map((f) => ({ title: f.title, rating: f.rating, effect: f.effect })) }),
+      ModelSummary,
+    );
+    if (drafted?.executiveSummary) summary = `${drafted.executiveSummary}\n\n_(Executive summary drafted by AI from approved findings; reviewed at report sign-off.)_`;
+
+    const counts: Record<TestConclusion, number> = { Effective: 0, Ineffective: 0, 'Design deficient': 0, 'Not tested': 0 };
+    e.rcm.forEach((r) => counts[e.testResults[r.id]?.conclusion ?? 'Not tested']++);
+    const packs = e.packIds.map((id) => `${ctx.registry.get(id).name} v${ctx.registry.get(id).version}`).join(', ');
+    const draftClauses = new Set<string>();
+    e.rcm.forEach((r) => r.citations.forEach((c) => ctx.registry.clauses.get(c.clauseId)?.reviewStatus === 'draft' && draftClauses.add(c.clauseId)));
+
+    const md = [
+      `# Internal Audit Report — ${e.name}`,
+      ``,
+      `| Field | Detail |`,
+      `|---|---|`,
+      `| Entity / site | ${e.entity} — ${e.site} |`,
+      `| Audit type | ${e.auditType} |`,
+      `| Period | ${e.periodFrom} to ${e.periodTo} |`,
+      `| Content packs | ${packs} |`,
+      `| Generated | ${new Date().toISOString()} |`,
+      ``,
+      `## 1. Executive summary`,
+      ``,
+      summary,
+      ``,
+      `## 2. Scope and approach`,
+      ``,
+      e.scopeStatement,
+      ``,
+      `${e.rcm.length} controls were placed in scope from the control library. Each control was assessed for design (TOD) and, where designed adequately, tested for operating effectiveness (TOE) on a sample sized by frequency and risk.`,
+      ``,
+      `| Conclusion | Controls |`,
+      `|---|---|`,
+      ...Object.entries(counts).map(([k, v]) => `| ${k} | ${v} |`),
+      ``,
+      `## 3. Findings`,
+      ``,
+      approved.length ? approved.map((f, i) => findingMd(f, i + 1)).join('\n') : '_No approved findings._',
+      ``,
+      `## 4. Controls tested`,
+      ``,
+      `| Control | Process area | Risk | Sample | Conclusion |`,
+      `|---|---|---|---|---|`,
+      ...e.rcm.map((r) => `| ${r.controlId} ${r.control} | ${r.processArea} | ${r.riskRating} | ${e.testInputs[r.id]?.sampleTested ?? 0}/${r.sampleSize} | ${e.testResults[r.id]?.conclusion ?? 'Not tested'} |`),
+      ``,
+      excluded.length ? `## 5. Excluded from this report\n\n${excluded.map((f) => `- ${f.id} ${f.title} — status ${f.status}`).join('\n')}\n` : '',
+      `---`,
+      `Citations marked draft in the content pack (${draftClauses.size}) are pending domain-expert review: ${[...draftClauses].join(', ') || 'none'}.`,
+    ].join('\n');
+
+    return { generatedAt: new Date().toISOString(), markdown: md, includedFindingIds: approved.map((f) => f.id), excludedFindingIds: excluded.map((f) => f.id) };
+  },
+
+  apply(e, report, bundleId) {
+    e.report = { ...report, bundleId };
+    e.stage = 'reporting';
+  },
+};
