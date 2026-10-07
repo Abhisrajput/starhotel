@@ -36,12 +36,19 @@ export const PROFILES: Record<string, { description: string; build: (env: Env) =
   },
   'anthropic-bedrock': {
     description: 'Claude via Amazon Bedrock (AWS_REGION; IAM role or AWS credentials)',
-    build: (env) => new ClaudeProvider('anthropic-bedrock', env.BEDROCK_MODEL || 'anthropic.claude-opus-5-5', new AnthropicBedrockMantle({ awsRegion: required(env, 'AWS_REGION') }) as never),
+    build: (env) => {
+      const awsRegion = required(env, 'AWS_REGION');
+      return new ClaudeProvider('anthropic-bedrock', env.BEDROCK_MODEL || 'anthropic.claude-opus-5-5', () => new AnthropicBedrockMantle({ awsRegion }) as never);
+    },
   },
   'anthropic-vertex': {
     description: 'Claude via Google Vertex AI (VERTEX_PROJECT_ID; workload identity / ADC)',
-    build: (env) =>
-      new ClaudeProvider('anthropic-vertex', env.VERTEX_MODEL || 'claude-opus-5-5', new AnthropicVertex({ projectId: required(env, 'VERTEX_PROJECT_ID'), region: env.VERTEX_REGION || 'global' }) as never),
+    build: (env) => {
+      const projectId = required(env, 'VERTEX_PROJECT_ID');
+      const region = env.VERTEX_REGION || 'global';
+      // Constructed on first use: the Vertex client starts a Google credential lookup immediately.
+      return new ClaudeProvider('anthropic-vertex', env.VERTEX_MODEL || 'claude-opus-5-5', () => new AnthropicVertex({ projectId, region }) as never);
+    },
   },
   'azure-openai': {
     description: 'Azure OpenAI (AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT; API key or managed identity)',

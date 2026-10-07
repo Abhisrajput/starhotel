@@ -11,16 +11,20 @@ import { ProviderError } from './provider';
 type ClaudeClient = { beta: { messages: Pick<Anthropic['beta']['messages'], 'parse'> } };
 
 export class ClaudeProvider implements LlmProvider {
+  private resolved: ClaudeClient | null = null;
+
   constructor(
     readonly id: string,
     readonly model: string,
-    private client: ClaudeClient,
+    /** A client, or a factory called on first use so no credential lookup happens at startup. */
+    private client: ClaudeClient | (() => ClaudeClient),
     /** Server-side refusal fallback is only available on the first-party API. */
     private serverFallback = false,
   ) {}
 
   async generate<T>(req: GenerateRequest<T>): Promise<GenerateResult<T>> {
-    const response = await this.client.beta.messages.parse({
+    this.resolved ??= typeof this.client === 'function' ? this.client() : this.client;
+    const response = await this.resolved.beta.messages.parse({
       model: this.model,
       max_tokens: 16000,
       ...(this.serverFallback ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
