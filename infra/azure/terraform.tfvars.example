@@ -1,0 +1,22 @@
+# Copy to terraform.tfvars and adjust.
+subscription_id = "00000000-0000-0000-0000-000000000000"
+name            = "auditctl"
+environment     = "dev"
+location        = "centralindia"
+# openai_location = "swedencentral"   # if the model is not offered in `location`
+
+# Leave empty for the first apply; CI sets it afterwards.
+image = ""
+
+llm_default = "azure-openai"
+# llm_routes = "gaps:anthropic-foundry"
+# anthropic_foundry_resource = "my-foundry-resource"
+
+auth_mode = "demo"
+# auth_mode = "oidc"
+# oidc = {
+#   client_id = "<SPA app registration client id>"
+#   audience  = "api://audit-platform"
+#   scope     = "api://audit-platform/Audit.Access"
+# }
+seed_demo = true

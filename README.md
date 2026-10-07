@@ -29,7 +29,9 @@ Screenshots: [scope](docs/screenshots/scope.png) · [findings & sign-off](docs/s
 | Runtime QA gates | `backend/src/engine/qa.ts` | Citation, evidence, triple-citation, release, consistency, library-only |
 | Audit-trail bundle per execution | `backend/src/engine/trail.ts` | Inputs, retrieval set, log, QA actions, output, versions, actor; SHA-256 chained |
 | Grounding index with clause metadata | `backend/src/engine/grounding.ts` | BM25 keyword index; swap for vector search later |
-| Model routing, model-agnostic | `backend/src/engine/llm/*` | `offline` deterministic rules (default) or `anthropic` (Claude) |
+| Model routing, model-agnostic | `backend/src/engine/llm/*` | Azure OpenAI, Claude (Anthropic API, Foundry, Bedrock, Vertex), OpenAI-compatible (vLLM/Ollama) or offline rules; per-module routes and fallback chains |
+| Cloud-agnostic runtime | `Dockerfile`, `backend/src/persistence`, `backend/src/auth.ts` | One container; PostgreSQL (append-only trail) or JSON; OIDC sign-in (Entra ID, Cognito, Google, Okta) |
+| Azure deployment | `infra/azure` | Terraform: Container Apps, PostgreSQL (Entra auth), Azure OpenAI, Key Vault, ACR, managed identity; CI/CD workflows |
 | Common pack (RCM, TOD/TOE, gap writer) | `backend/packs/common` | COSO-based P2P, ITGC, **treasury & commodity hedging**, governance |
 | Food pack | `backend/packs/food` | HACCP verification, supplier/co-man, traceability & recall, allergens, PRPs |
 | Pharma pack | `backend/packs/pharma` | GMP self-inspection: QU, training, deviations/CAPA, batch release, data integrity, lab, change control, suppliers |
@@ -60,8 +62,13 @@ npm install
 npm run dev         # open http://localhost:5174
 ```
 
-Or with Docker: `docker compose up --build` from the repo root. The UI is then on
-http://localhost:8080.
+Or run the production setup locally, the same container and PostgreSQL the
+cloud deployment uses: `docker compose up --build` from the repo root. The UI is
+then on http://localhost:8080.
+
+To deploy to Azure, see [`infra/azure/README.md`](infra/azure/README.md). For
+the cloud- and model-agnostic architecture and its AWS/GCP equivalents, see
+[`docs/deployment.md`](docs/deployment.md).
 
 ### Demo script (≈10 minutes)
 
@@ -86,16 +93,24 @@ http://localhost:8080.
 9. **Evaluation & validation**: run the harness and review the requirements
    traceability matrix.
 
-## Using Claude for drafting
+## Choosing models
 
-By default every module runs on deterministic rules (`LLM_PROVIDER=offline`). That
-needs no key and gives reproducible output. To have Claude draft scope rationales,
-tailored test steps, findings and the executive summary:
+By default every module runs on deterministic rules (`LLM_DEFAULT=offline`). That
+needs no key and gives reproducible output. Pick a model profile per environment,
+and optionally per module:
+
+| Profile | Settings |
+|---|---|
+| `azure-openai` | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`; API key or managed identity |
+| `anthropic-foundry` | `ANTHROPIC_FOUNDRY_RESOURCE`; API key or managed identity |
+| `anthropic` | `ANTHROPIC_API_KEY` (model defaults to `claude-opus-5-5`) |
+| `anthropic-bedrock` | `AWS_REGION`; IAM role |
+| `anthropic-vertex` | `VERTEX_PROJECT_ID`; service account |
+| `openai-compatible` | `OPENAI_BASE_URL`, `OPENAI_MODEL` (vLLM, Ollama, LiteLLM, OpenAI) |
 
 ```bash
-export ANTHROPIC_API_KEY=...
-LLM_PROVIDER=anthropic npm run dev                  # model defaults to claude-opus-5-5; override with ANTHROPIC_MODEL
-npm run eval -- --provider anthropic                # qualify the model against the eval set before use
+LLM_DEFAULT='azure-openai>anthropic-foundry' LLM_ROUTES='gaps:anthropic-foundry' npm run dev
+npm run eval -- --provider azure-openai     # qualify a model against the eval set before use
 ```
 
 The model only drafts. Every model output passes through the same QA gates as the
@@ -106,12 +121,9 @@ offline rules:
 - It cannot call a control effective when exceptions were recorded.
 - Its output cannot be released without human sign-off.
 
-If a call fails or is declined, the module falls back to the deterministic rules
-and records a QA flag. Server-side refusal fallback (`fallbacks: "default"`) is
-enabled, and the trail records the model that actually served each request. For
-Microsoft-first clients, add a provider for Azure OpenAI, or for Claude on
-Microsoft Foundry, behind the same `LlmProvider` interface in
-`backend/src/engine/llm/provider.ts`.
+If every provider in a chain fails or declines, the module falls back to the
+deterministic rules and records a QA flag. The audit trail records the model that
+actually served each request.
 
 ## Adding a sector or regulation
 
@@ -130,7 +142,7 @@ rejected. No engine code changes are needed.
 
 ```bash
 cd backend
-npm test              # 21 tests, tagged to requirements [REQ-xx]
+npm test              # 39 tests incl. real PostgreSQL and OIDC, tagged [REQ-xx]
 npm run eval          # 25/25 eval cases (offline) -> validation-output/eval-latest.md
 npm run traceability  # requirements traceability matrix -> validation-output/traceability.md
 npm run typecheck
@@ -144,11 +156,12 @@ npm run typecheck
 - **Real evidence ingestion:** evidence is recorded as references today. Next is
   reading SOPs, deviations and CAPAs from an eQMS (Veeva, MasterControl, TrackWise)
   and attaching documents.
-- **Persistence and identity:** the JSON file store and demo user switcher are
-  placeholders. Production needs Postgres or Dataverse plus Entra ID SSO, with
-  Part 11-grade e-signatures (re-authentication at signing).
-- **Deployment:** deploy into the client's tenant (e.g. Azure App Service +
-  Azure AI Search).
+- **E-signatures:** Part 11-grade e-signatures (re-authentication at signing) on
+  top of the OIDC sign-in.
+- **Scale-out and private networking:** see "Known MVP limits" in
+  [`docs/deployment.md`](docs/deployment.md).
+- **AWS and GCP infrastructure as code:** the adapters exist; `infra/aws` and
+  `infra/gcp` are still to be written.
 - **Further modules:** pharma deviation/CAPA effectiveness review, ALCOA+
   data-integrity audit, food supplier audit modules, Audit Committee pack.
 - **Validation:** IQ/PQ in a client environment, and full change control over

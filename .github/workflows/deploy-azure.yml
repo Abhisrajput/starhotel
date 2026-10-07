@@ -1,0 +1,40 @@
+name: Deploy to Azure
+
+# Releases a new image to an environment created with infra/azure (run
+# infra/azure/deploy.sh once first). Authenticates with GitHub OIDC federated
+# credentials: no Azure secrets are stored in the repository.
+#
+# Repository secrets: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+# Repository variables: AZURE_RESOURCE_GROUP, AZURE_CONTAINER_APP, AZURE_REGISTRY_NAME
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: azure
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Build image in ACR
+        run: az acr build --registry "${{ vars.AZURE_REGISTRY_NAME }}" --image "audit-platform:${{ github.sha }}" .
+      - name: Roll out
+        run: |
+          az containerapp update \
+            --name "${{ vars.AZURE_CONTAINER_APP }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "${{ vars.AZURE_REGISTRY_NAME }}.azurecr.io/audit-platform:${{ github.sha }}"
+      - name: Smoke test
+        run: |
+          FQDN=$(az containerapp show -n "${{ vars.AZURE_CONTAINER_APP }}" -g "${{ vars.AZURE_RESOURCE_GROUP }}" --query properties.configuration.ingress.fqdn -o tsv)
+          for i in $(seq 1 30); do curl -fsS "https://$FQDN/api/readyz" && exit 0; sleep 10; done
+          exit 1
