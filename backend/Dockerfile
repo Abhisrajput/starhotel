@@ -1,18 +1,19 @@
-FROM node:20-alpine AS builder
-RUN apk add --no-cache openssl
+FROM node:22-alpine AS build
 WORKDIR /app
-COPY package.json ./
-RUN npm install
-COPY . .
-RUN npx prisma generate
+COPY package*.json ./
+RUN npm ci
+COPY tsconfig.json ./
+COPY src ./src
 RUN npm run build
 
-FROM node:20-alpine
-RUN apk add --no-cache openssl
+FROM node:22-alpine
 WORKDIR /app
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/prisma ./prisma
-EXPOSE 3001
-CMD ["sh", "-c", "until npx prisma migrate deploy 2>&1; do echo 'Retrying in 5s...'; sleep 5; done && node dist/app.js"]
+ENV NODE_ENV=production
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY --from=build /app/dist ./dist
+COPY packs ./packs
+COPY validation ./validation
+COPY tests ./tests
+EXPOSE 3002
+CMD ["node", "dist/server.js"]

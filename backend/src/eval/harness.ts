@@ -1,0 +1,139 @@
+import type { LlmProvider } from '../engine/llm/provider';
+import type { PackRegistry } from '../engine/packs';
+import type { ContentPack, EvalCase } from '../engine/types';
+import { AuditService, ENGINE_VERSION, USERS } from '../service';
+import { Store } from '../store';
+
+// Evaluation harness: replays expert-labelled cases from each content pack
+// through the real modules and gates. Its report doubles as test evidence in
+// the validation package (OQ-style), and is how a model or prompt change is
+// qualified before release.
+
+export interface EvalCaseResult {
+  id: string;
+  packId: string;
+  kind: EvalCase['kind'];
+  description: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface EvalReport {
+  id: string;
+  at: string;
+  provider: { id: string; model: string };
+  engineVersion: string;
+  packVersions: Record<string, string>;
+  total: number;
+  passed: number;
+  byKind: Record<string, { total: number; passed: number }>;
+  cases: EvalCaseResult[];
+}
+
+interface TestCaseInput {
+  controlId: string;
+  designAdequate: boolean | null;
+  observation: string;
+  evidenceRefs: string[];
+  sampleTested: number;
+  exceptions: number;
+}
+
+async function runFieldCase(registry: PackRegistry, llm: LlmProvider | null, pack: ContentPack, input: TestCaseInput, withGaps: boolean) {
+  const svc = new AuditService(new Store(null), registry, llm);
+  const [auditor] = USERS;
+  const control = registry.controls.get(input.controlId);
+  if (!control) throw new Error(`Eval case references unknown control ${input.controlId}`);
+  const e = svc.createEngagement(
+    { name: 'eval', entity: 'eval', site: 'eval', periodFrom: '2026-01-01', periodTo: '2026-06-30', auditType: 'eval', scopeStatement: control.title, packIds: [control.packId] },
+    auditor,
+  );
+  await svc.runModule(e.id, 'scope', auditor);
+  svc.setScope(e.id, e.scope.map((s) => ({ controlId: s.controlId, included: s.controlId === input.controlId })), auditor);
+  await svc.runModule(e.id, 'rcm', auditor);
+  svc.recordTest(e.id, input.controlId, { designAdequate: input.designAdequate, observation: input.observation, evidenceRefs: input.evidenceRefs, sampleTested: input.sampleTested, exceptions: input.exceptions }, auditor);
+  await svc.runModule(e.id, 'testing', auditor);
+  if (withGaps) await svc.runModule(e.id, 'gaps', auditor);
+  return svc.engagement(e.id);
+}
+
+async function runCase(registry: PackRegistry, llm: LlmProvider | null, svcForSearch: AuditService, pack: ContentPack, c: EvalCase): Promise<EvalCaseResult> {
+  const base = { id: c.id, packId: pack.id, kind: c.kind, description: c.description };
+  try {
+    if (c.kind === 'retrieval') {
+      const k = Number(c.expected.k ?? 5);
+      const packIds = (c.input.packIds as string[] | undefined) ?? [pack.id];
+      const allowed = new Set(registry.clausesFor(packIds).map((x) => x.id));
+      const hits = svcForSearch.grounding.clauses.search(String(c.input.query), k, (id) => allowed.has(id)).map((h) => h.clauseId);
+      const expected = c.expected.clauseIds as string[];
+      const missing = expected.filter((id) => !hits.includes(id));
+      return { ...base, passed: missing.length === 0, detail: missing.length ? `Missing from top ${k}: ${missing.join(', ')} (got ${hits.join(', ')})` : `All expected clauses in top ${k}` };
+    }
+    const input = c.input as unknown as TestCaseInput;
+    const e = await runFieldCase(registry, llm, pack, input, c.kind === 'gaps');
+    if (c.kind === 'testing') {
+      const got = e.testResults[input.controlId]?.conclusion;
+      return { ...base, passed: got === c.expected.conclusion, detail: `expected ${c.expected.conclusion}, got ${got}` };
+    }
+    const f = e.findings.find((x) => x.rowId === input.controlId);
+    const problems: string[] = [];
+    if (c.expected.finding === false) {
+      if (f) problems.push('a finding was raised but none expected');
+    } else {
+      if (!f) problems.push('no finding raised');
+      if (f && c.expected.status && f.status !== c.expected.status) problems.push(`status ${f.status} != ${c.expected.status}`);
+      for (const id of (c.expected.mustCite as string[] | undefined) ?? []) {
+        if (f && !f.citations.some((x) => x.clauseId === id)) problems.push(`does not cite ${id}`);
+      }
+      if (f && c.expected.rating && f.rating !== c.expected.rating) problems.push(`rating ${f.rating} != ${c.expected.rating}`);
+    }
+    return { ...base, passed: problems.length === 0, detail: problems.join('; ') || 'finding matches expectations' };
+  } catch (err) {
+    return { ...base, passed: false, detail: `error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+export async function runEval(registry: PackRegistry, llm: LlmProvider | null, packIds?: string[]): Promise<EvalReport> {
+  const svc = new AuditService(new Store(null), registry, llm);
+  const packs = registry.list().filter((p) => !packIds || packIds.includes(p.id));
+  const cases: EvalCaseResult[] = [];
+  for (const pack of packs) {
+    for (const c of pack.evalCases) cases.push(await runCase(registry, llm, svc, pack, c));
+  }
+  const byKind: EvalReport['byKind'] = {};
+  for (const r of cases) {
+    byKind[r.kind] ??= { total: 0, passed: 0 };
+    byKind[r.kind].total++;
+    if (r.passed) byKind[r.kind].passed++;
+  }
+  return {
+    id: `EVAL-${Date.now()}`,
+    at: new Date().toISOString(),
+    provider: svc.providerInfo,
+    engineVersion: ENGINE_VERSION,
+    packVersions: Object.fromEntries(packs.map((p) => [p.id, p.version])),
+    total: cases.length,
+    passed: cases.filter((c) => c.passed).length,
+    byKind,
+    cases,
+  };
+}
+
+export function evalMarkdown(r: EvalReport): string {
+  return [
+    `# Evaluation report ${r.id}`,
+    ``,
+    `- Run at: ${r.at}`,
+    `- Provider: ${r.provider.id} / ${r.provider.model}`,
+    `- Engine: ${r.engineVersion}; packs: ${Object.entries(r.packVersions).map(([k, v]) => `${k}@${v}`).join(', ')}`,
+    `- Result: **${r.passed}/${r.total} passed**`,
+    ``,
+    `| Kind | Passed |`,
+    `|---|---|`,
+    ...Object.entries(r.byKind).map(([k, v]) => `| ${k} | ${v.passed}/${v.total} |`),
+    ``,
+    `| Case | Pack | Kind | Result | Detail |`,
+    `|---|---|---|---|---|`,
+    ...r.cases.map((c) => `| ${c.id} | ${c.packId} | ${c.kind} | ${c.passed ? 'PASS' : 'FAIL'} | ${c.detail.replace(/\|/g, '/')} |`),
+  ].join('\n');
+}
