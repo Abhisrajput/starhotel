@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../api';
 import type { TabProps } from '../../pages/EngagementPage';
 import type { Engagement } from '../../types';
-import { ActionButton, Citations, RiskChip } from '../common';
+import { ActionButton, Citations, ModuleBar, RiskChip } from '../common';
 
 export default function ScopeTab({ engagement: e, setEngagement, run }: TabProps) {
   const [included, setIncluded] = useState<Record<string, boolean>>({});
@@ -13,10 +13,10 @@ export default function ScopeTab({ engagement: e, setEngagement, run }: TabProps
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} alignItems="center">
-        <ActionButton startIcon={<PlayArrowIcon />} action={() => run('scope')}>
-          {e.scope.length ? 'Re-run' : 'Run'} Risk & Scope analysis
-        </ActionButton>
+      <ModuleBar
+        title="Risk & Scope Analysis"
+        description={`${Object.values(included).filter(Boolean).length} of ${e.scope.length} library controls in scope. Adjust and save; every decision is written to the audit trail.`}
+      >
         <ActionButton
           variant="outlined"
           disabled={!dirty}
@@ -24,12 +24,12 @@ export default function ScopeTab({ engagement: e, setEngagement, run }: TabProps
             setEngagement(await api<Engagement>(`/engagements/${e.id}/scope`, { method: 'PUT', body: { items: e.scope.map((s) => ({ controlId: s.controlId, included: included[s.controlId] })) } }))
           }
         >
-          Save scope decisions
+          Save decisions
         </ActionButton>
-        <Typography color="text.secondary">
-          {Object.values(included).filter(Boolean).length} of {e.scope.length} library controls in scope. Your decisions are recorded in the audit trail.
-        </Typography>
-      </Stack>
+        <ActionButton startIcon={<PlayArrowIcon />} action={() => run('scope')}>
+          {e.scope.length ? 'Re-run analysis' : 'Run analysis'}
+        </ActionButton>
+      </ModuleBar>
       {e.scope.length > 0 && (
         <Card variant="outlined">
           <Table size="small">

@@ -1,16 +1,30 @@
-import { Alert, Box, Card, Chip, Collapse, Link, Stack, Step, StepButton, Stepper, Tab, Tabs, Typography } from '@mui/material';
-import { useCallback, useEffect, useState } from 'react';
+import {
+  ArrowBack as BackIcon, Assessment as ReportIcon, Checklist as RcmIcon, ExpandMore as ExpandIcon, FindInPage as FindingsIcon,
+  Fingerprint as TrailIcon, Radar as ScopeIcon, Science as TestIcon,
+} from '@mui/icons-material';
+import { Box, Card, Collapse, Grid, Link, Stack, Typography, alpha } from '@mui/material';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link as RouterLink, useParams } from 'react-router-dom';
 import { api } from '../api';
+import { Badge } from '../components/common';
 import FieldworkTab from '../components/engagement/FieldworkTab';
 import FindingsTab from '../components/engagement/FindingsTab';
 import RcmTab from '../components/engagement/RcmTab';
 import ReportTab from '../components/engagement/ReportTab';
 import ScopeTab from '../components/engagement/ScopeTab';
 import TrailTab from '../components/engagement/TrailTab';
+import { tokens } from '../theme';
 import type { Engagement, TrailBundle } from '../types';
+import { PACK_STYLE } from './EngagementsPage';
 
-const STEPS = ['Risk & scope', 'RCM', 'Fieldwork & testing', 'Findings', 'Report'];
+const STEPS: { label: string; hint: string; icon: ReactNode }[] = [
+  { label: 'Risk & scope', hint: 'Rank the library', icon: <ScopeIcon fontSize="small" /> },
+  { label: 'Control matrix', hint: 'Risks, tests, samples', icon: <RcmIcon fontSize="small" /> },
+  { label: 'Fieldwork', hint: 'TOD / TOE', icon: <TestIcon fontSize="small" /> },
+  { label: 'Findings', hint: 'Draft & sign off', icon: <FindingsIcon fontSize="small" /> },
+  { label: 'Report', hint: 'Approved only', icon: <ReportIcon fontSize="small" /> },
+  { label: 'Audit trail', hint: 'Hash-chained', icon: <TrailIcon fontSize="small" /> },
+];
 
 export interface TabProps {
   engagement: Engagement;
@@ -23,28 +37,81 @@ function GateSummary({ bundle }: { bundle: TrailBundle }) {
   const count = (o: string) => bundle.qaActions.filter((a) => a.outcome === o).length;
   const fails = count('fail');
   const warns = count('warn');
+  const tone = fails ? 'red' : warns ? 'amber' : 'green';
+  const color = fails ? '#DC2626' : warns ? '#D97706' : '#16A34A';
   return (
-    <Alert severity={fails ? 'error' : warns ? 'warning' : 'success'} sx={{ mb: 2 }}>
-      <Typography variant="body2">
-        <b>{bundle.moduleId}</b> ran as {bundle.id} via {bundle.provider.id}/{bundle.provider.model}. QA gates: {count('pass')} passed, {warns} warnings, {fails} failed.{' '}
+    <Card sx={{ mb: 2.5, borderColor: alpha(color, 0.3), bgcolor: alpha(color, 0.03) }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }} sx={{ px: 2.5, py: 1.75 }}>
+        <Badge tone={tone} dot>
+          QA gates · {count('pass')} passed · {warns} warnings · {fails} failed
+        </Badge>
+        <Typography sx={{ fontSize: 13.5, color: 'text.secondary', flex: 1 }}>
+          <b style={{ color: tokens.text }}>{bundle.moduleId}</b> ran as <code>{bundle.id}</code> on {bundle.provider.id}/{bundle.provider.model}
+        </Typography>
         {bundle.qaActions.length > 0 && (
-          <Link component="button" onClick={() => setOpen(!open)}>
-            {open ? 'Hide' : 'Show'} gate decisions
+          <Link component="button" onClick={() => setOpen(!open)} sx={{ fontSize: 13.5, fontWeight: 600, display: 'flex', alignItems: 'center' }} underline="none">
+            {open ? 'Hide' : 'View'} gate decisions <ExpandIcon fontSize="small" sx={{ transform: open ? 'rotate(180deg)' : 'none', transition: '.2s' }} />
           </Link>
         )}
-      </Typography>
+      </Stack>
       <Collapse in={open}>
-        <Box component="ul" sx={{ m: 0, pl: 2 }}>
+        <Stack spacing={0.75} sx={{ px: 2.5, pb: 2 }}>
           {bundle.qaActions.map((a, i) => (
-            <li key={i}>
-              <Typography variant="body2">
-                [{a.gate}] {a.outcome.toUpperCase()} on {a.target}: {a.detail} {a.action !== 'none' && <b>→ {a.action}</b>}
+            <Stack key={i} direction="row" spacing={1.25} alignItems="baseline">
+              <Badge tone={a.outcome === 'fail' ? 'red' : a.outcome === 'warn' ? 'amber' : 'green'}>{a.gate}</Badge>
+              <Typography sx={{ fontSize: 13 }}>
+                <code>{a.target}</code> — {a.detail} {a.action !== 'none' && <b>→ {a.action}</b>}
               </Typography>
-            </li>
+            </Stack>
           ))}
-        </Box>
+        </Stack>
       </Collapse>
-    </Alert>
+    </Card>
+  );
+}
+
+function StepTracker({ active, done, onSelect }: { active: number; done: boolean[]; onSelect: (i: number) => void }) {
+  return (
+    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(3, minmax(0, 1fr))', xl: 'repeat(6, minmax(0, 1fr))' }, gap: 1.25, mb: 3 }}>
+      {STEPS.map((s, i) => {
+        const isActive = i === active;
+        const isDone = done[i];
+        return (
+          <Box
+            key={s.label}
+            onClick={() => onSelect(i)}
+            sx={{
+              cursor: 'pointer', p: 1.5, borderRadius: 3, minWidth: 0, display: 'flex', alignItems: 'center', gap: 1.25, transition: 'all .15s',
+              bgcolor: isActive ? tokens.ink : 'white',
+              color: isActive ? 'white' : tokens.text,
+              border: `1px solid ${isActive ? tokens.ink : tokens.border}`,
+              boxShadow: isActive ? '0 12px 28px -14px rgba(11,18,32,.6)' : 'none',
+              '&:hover': { borderColor: isActive ? tokens.ink : alpha(tokens.indigo, 0.4) },
+            }}
+          >
+            <Box
+              sx={{
+                width: 34, height: 34, borderRadius: 2, display: 'grid', placeItems: 'center', flexShrink: 0,
+                backgroundImage: isActive ? tokens.gradient : 'none',
+                bgcolor: isActive ? undefined : isDone ? alpha(tokens.teal, 0.12) : '#F1F5F9',
+                color: isActive ? 'white' : isDone ? tokens.teal : tokens.muted,
+              }}
+            >
+              {s.icon}
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.2 }} noWrap>
+                {s.label}
+              </Typography>
+              <Typography sx={{ fontSize: 11.5, opacity: 0.65 }} noWrap>
+                {isDone && i < 5 ? 'Done · ' : ''}
+                {s.hint}
+              </Typography>
+            </Box>
+          </Box>
+        );
+      })}
+    </Box>
   );
 }
 
@@ -67,47 +134,64 @@ export default function EngagementPage() {
 
   if (!engagement) return null;
   const e = engagement;
-  const done = [e.scope.length > 0, e.rcm.length > 0, Object.keys(e.testResults).length > 0, e.findings.length > 0, !!e.report];
+  const done = [e.scope.length > 0, e.rcm.length > 0, Object.keys(e.testResults).length > 0, e.findings.length > 0, !!e.report, true];
   const props: TabProps = { engagement: e, setEngagement, run };
+  const results = Object.values(e.testResults);
+  const kpis = [
+    ['In scope', e.scope.filter((s) => s.included).length],
+    ['Tested', results.filter((r) => r.conclusion !== 'Not tested').length],
+    ['Exceptions', results.filter((r) => r.conclusion === 'Ineffective' || r.conclusion === 'Design deficient').length],
+    ['Findings', e.findings.length],
+    ['Approved', e.findings.filter((f) => f.status === 'approved').length],
+  ];
 
   return (
-    <Stack spacing={2}>
-      <Box>
-        <Link component={RouterLink} to="/engagements" underline="hover">
-          ← Engagements
-        </Link>
-        <Typography variant="h5" fontWeight={600} sx={{ mt: 1 }}>
-          {e.name}
-        </Typography>
-        <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ mt: 0.5 }}>
-          <Chip size="small" label={e.id} sx={{ fontFamily: 'monospace' }} />
-          <Typography color="text.secondary">
-            {e.entity} · {e.site} · {e.periodFrom} to {e.periodTo}
-          </Typography>
-          {e.packIds.map((p) => (
-            <Chip key={p} size="small" color="primary" variant="outlined" label={p} />
-          ))}
-        </Stack>
-        <Typography variant="body2" sx={{ mt: 1, maxWidth: 1000 }}>
-          <b>Scope:</b> {e.scopeStatement}
-        </Typography>
-      </Box>
+    <Box>
+      <Link component={RouterLink} to="/engagements" underline="none" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, fontSize: 14, fontWeight: 600, mb: 2 }}>
+        <BackIcon fontSize="small" /> All engagements
+      </Link>
 
-      <Card variant="outlined" sx={{ p: 2 }}>
-        <Stepper nonLinear activeStep={tab}>
-          {STEPS.map((label, i) => (
-            <Step key={label} completed={done[i]}>
-              <StepButton onClick={() => setTab(i)}>{label}</StepButton>
-            </Step>
-          ))}
-        </Stepper>
+      <Card sx={{ mb: 3, overflow: 'hidden' }}>
+        <Box sx={{ height: 4, backgroundImage: tokens.gradient }} />
+        <Grid container>
+          <Grid item xs={12} lg={7} sx={{ p: { xs: 2.5, md: 3.5 } }}>
+            <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ mb: 1.5 }}>
+              {e.packIds.map((p) => {
+                const st = PACK_STYLE[p];
+                return (
+                  <Badge key={p} tone="slate" sx={{ color: st?.color, bgcolor: alpha(st?.color ?? '#64748B', 0.08), borderColor: alpha(st?.color ?? '#64748B', 0.2), textTransform: 'capitalize' }}>
+                    {p} pack
+                  </Badge>
+                );
+              })}
+              <Typography sx={{ fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12, color: 'text.secondary' }}>{e.id}</Typography>
+            </Stack>
+            <Typography variant="h4" sx={{ fontSize: { xs: 24, md: 30 } }}>
+              {e.name}
+            </Typography>
+            <Typography sx={{ color: 'text.secondary', mt: 0.75 }}>
+              {e.entity} · {e.site} · {e.periodFrom} → {e.periodTo}
+            </Typography>
+            <Typography sx={{ mt: 2, fontSize: 14, lineHeight: 1.6, color: tokens.text, maxWidth: 760 }}>
+              <Box component="span" sx={{ fontWeight: 700 }}>Scope · </Box>
+              {e.scopeStatement}
+            </Typography>
+          </Grid>
+          <Grid item xs={12} lg={5} sx={{ p: { xs: 2.5, md: 3.5 }, bgcolor: '#F8FAFC', borderLeft: { lg: `1px solid ${tokens.border}` }, borderTop: { xs: `1px solid ${tokens.border}`, lg: 0 } }}>
+            <Typography variant="subtitle2">Engagement at a glance</Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, mt: 1.5 }}>
+              {kpis.map(([l, v]) => (
+                <Box key={l}>
+                  <Typography sx={{ fontFamily: 'Plus Jakarta Sans', fontWeight: 800, fontSize: 28, lineHeight: 1.1 }}>{v}</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>{l}</Typography>
+                </Box>
+              ))}
+            </Box>
+          </Grid>
+        </Grid>
       </Card>
 
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable">
-        {[...STEPS, 'Audit trail'].map((l) => (
-          <Tab key={l} label={l} />
-        ))}
-      </Tabs>
+      <StepTracker active={tab} done={done} onSelect={setTab} />
 
       {lastRun && tab < 5 && <GateSummary bundle={lastRun} />}
 
@@ -117,6 +201,6 @@ export default function EngagementPage() {
       {tab === 3 && <FindingsTab {...props} />}
       {tab === 4 && <ReportTab {...props} />}
       {tab === 5 && <TrailTab {...props} />}
-    </Stack>
+    </Box>
   );
 }

@@ -2,7 +2,7 @@ import { PlayArrow as PlayArrowIcon } from '@mui/icons-material';
 import { Alert, Box, Card, CardContent, Chip, Grid, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import { ActionButton } from '../components/common';
+import { ActionButton, Badge, PageHeader, StatTile } from '../components/common';
 import type { EvalReport } from '../types';
 
 interface TraceRow {
@@ -25,16 +25,13 @@ export default function ValidationPage() {
 
   return (
     <Stack spacing={3}>
-      <Box>
-        <Typography variant="h5" fontWeight={600}>
-          Evaluation & validation
-        </Typography>
-        <Typography color="text.secondary">
-          The evaluation harness replays expert-labelled cases from every content pack through the real modules and QA gates. Its results are test evidence for the validation package and the release check for any prompt, model or content change.
-        </Typography>
-      </Box>
+      <PageHeader
+        eyebrow="Model risk management"
+        title="Evaluation & validation"
+        subtitle="The evaluation harness replays expert-labelled cases from every content pack through the real modules and QA gates. Its results are validation evidence and the release check for any prompt, model or content change."
+      />
 
-      <Stack direction="row" spacing={2} alignItems="center">
+      <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: -2 }}>
         <ActionButton
           startIcon={<PlayArrowIcon />}
           action={async () => {
@@ -54,32 +51,16 @@ export default function ValidationPage() {
       {report && (
         <>
           <Grid container spacing={2}>
-            <Grid item xs={12} md={3}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography color="text.secondary">Overall</Typography>
-                  <Typography variant="h4" fontWeight={700} color={report.passed === report.total ? 'success.main' : 'error.main'}>
-                    {report.passed}/{report.total}
-                  </Typography>
-                </CardContent>
-              </Card>
+            <Grid item xs={6} md={3}>
+              <StatTile label="Overall" value={`${report.passed}/${report.total}`} hint={report.passed === report.total ? 'All cases pass' : 'Regressions found'} tone={report.passed === report.total ? 'green' : 'red'} />
             </Grid>
             {Object.entries(report.byKind).map(([k, v]) => (
-              <Grid item xs={12} md={3} key={k}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography color="text.secondary" sx={{ textTransform: 'capitalize' }}>
-                      {k}
-                    </Typography>
-                    <Typography variant="h4" fontWeight={700}>
-                      {v.passed}/{v.total}
-                    </Typography>
-                  </CardContent>
-                </Card>
+              <Grid item xs={6} md={3} key={k}>
+                <StatTile label={k[0].toUpperCase() + k.slice(1)} value={`${v.passed}/${v.total}`} hint={{ retrieval: 'Expected clauses retrieved', testing: 'Conclusions match experts', gaps: 'Findings cite correctly' }[k]} tone="indigo" />
               </Grid>
             ))}
           </Grid>
-          <Card variant="outlined">
+          <Card sx={{ overflow: "auto" }}>
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -99,7 +80,7 @@ export default function ValidationPage() {
                     <TableCell>{c.kind}</TableCell>
                     <TableCell>{c.description}</TableCell>
                     <TableCell>
-                      <Chip size="small" color={c.passed ? 'success' : 'error'} label={c.passed ? 'PASS' : 'FAIL'} />
+                      <Badge tone={c.passed ? 'green' : 'red'} dot>{c.passed ? 'Pass' : 'Fail'}</Badge>
                     </TableCell>
                     <TableCell sx={{ fontSize: 12 }}>{c.detail}</TableCell>
                   </TableRow>
@@ -111,11 +92,11 @@ export default function ValidationPage() {
       )}
 
       <Box>
-        <Typography variant="h6">Requirements traceability matrix</Typography>
+        <Typography variant="h5">Requirements traceability matrix</Typography>
         <Alert severity="info" sx={{ my: 1 }}>
           Skeleton of the GxP validation package: user requirements are linked to the automated tests and evaluation evidence that verify them. See backend/validation/README.md.
         </Alert>
-        <Card variant="outlined">
+        <Card sx={{ overflow: "auto" }}>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -129,10 +110,10 @@ export default function ValidationPage() {
               {trace.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell sx={{ fontFamily: 'monospace' }}>{r.id}</TableCell>
-                  <TableCell>{r.risk}</TableCell>
+                  <TableCell><Badge tone={r.risk === 'High' ? 'red' : r.risk === 'Medium' ? 'amber' : 'green'}>{r.risk}</Badge></TableCell>
                   <TableCell>{r.text}</TableCell>
                   <TableCell sx={{ fontSize: 12 }}>
-                    {r.verifiedBy.length ? r.verifiedBy.map((v) => <div key={v}>{v}</div>) : <Chip size="small" color="error" label="NOT COVERED" />}
+                    {r.verifiedBy.length ? r.verifiedBy.map((v) => <div key={v}>{v}</div>) : <Badge tone="red">Not covered</Badge>}
                   </TableCell>
                 </TableRow>
               ))}

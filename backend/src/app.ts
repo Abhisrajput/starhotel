@@ -70,7 +70,12 @@ export function createApp(svc: AuditService) {
 
   // ----- Engagements -----
   app.get('/api/engagements', (_req, res) =>
-    res.json(svc.store.engagements.map((e) => ({ id: e.id, name: e.name, entity: e.entity, site: e.site, auditType: e.auditType, packIds: e.packIds, stage: e.stage, createdAt: e.createdAt, findings: e.findings.length, rcm: e.rcm.length }))),
+    res.json(svc.store.engagements.map((e) => ({ id: e.id, name: e.name, entity: e.entity, site: e.site, auditType: e.auditType, packIds: e.packIds, stage: e.stage, createdAt: e.createdAt, periodFrom: e.periodFrom, periodTo: e.periodTo,
+      findings: e.findings.length, rcm: e.rcm.length,
+      approved: e.findings.filter((f) => f.status === 'approved').length,
+      awaitingSignOff: e.findings.filter((f) => f.status === 'draft' || f.status === 'reviewed').length,
+      blocked: e.findings.filter((f) => f.status === 'blocked').length,
+      tested: Object.values(e.testResults).filter((r) => r.conclusion !== 'Not tested').length }))),
   );
   app.post('/api/engagements', wrap((req, res) => {
     const body = NewEngagementSchema.parse(req.body);

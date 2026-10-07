@@ -7,7 +7,7 @@ import { api } from '../../api';
 import type { TabProps } from '../../pages/EngagementPage';
 import { useSession } from '../../session';
 import type { Engagement, Finding } from '../../types';
-import { ActionButton, Citations, RiskChip, StatusChip } from '../common';
+import { ActionButton, Citations, ModuleBar, RiskChip, StatusChip } from '../common';
 
 const FIELDS = ['condition', 'criteria', 'cause', 'effect', 'recommendation'] as const;
 
@@ -150,14 +150,11 @@ export default function FindingsTab({ engagement: e, setEngagement, run }: TabPr
   const reload = async () => setEngagement(await api<Engagement>(`/engagements/${e.id}`));
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} alignItems="center">
+      <ModuleBar title="Gap Writer" description="Drafts a finding for each failed control with triple citation. Approved findings are locked; others are redrafted.">
         <ActionButton startIcon={<PlayArrowIcon />} action={() => run('gaps')}>
           Run Gap Writer
         </ActionButton>
-        <Typography color="text.secondary">
-          Drafts a finding for each failed control. Approved findings are locked; others are redrafted.
-        </Typography>
-      </Stack>
+      </ModuleBar>
       {e.findings.map((f) => (
         <FindingCard key={f.id} f={f} engagementId={e.id} reload={reload} />
       ))}

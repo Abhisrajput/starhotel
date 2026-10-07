@@ -2,7 +2,7 @@ import { Search as SearchIcon } from '@mui/icons-material';
 import { Alert, Card, Chip, InputAdornment, Stack, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import { RiskChip } from '../components/common';
+import { Badge, PageHeader, RiskChip } from '../components/common';
 import type { Clause, ContentPack } from '../types';
 
 export default function LibraryPage() {
@@ -23,14 +23,14 @@ export default function LibraryPage() {
   const pack = packs.find((p) => p.id === packId);
   return (
     <Stack spacing={2}>
-      <Typography variant="h5" fontWeight={600}>
-        Content library
-      </Typography>
-      <Typography color="text.secondary">
-        Content packs hold the regulatory corpus (clause-level), the control library and the evaluation set. Adding a sector or regulation means adding a pack, not changing the engine.
-      </Typography>
+      <PageHeader
+        eyebrow="Grounding corpus"
+        title="Content library"
+        subtitle="Content packs hold the clause-level regulatory corpus, the control library and the evaluation set. Adding a sector or regulation means adding a pack, not changing the engine."
+      />
 
-      <Card variant="outlined" sx={{ p: 2 }}>
+      <Card sx={{ p: 2.5, background: `linear-gradient(135deg, rgba(79,70,229,.06), rgba(14,165,164,.06))` }}>
+        <Typography variant="subtitle2" sx={{ mb: 1 }}>Try the grounding index</Typography>
         <TextField
           fullWidth
           placeholder='Test the grounding index, e.g. "audit trail not reviewed" or "mock recall"'
@@ -64,13 +64,13 @@ export default function LibraryPage() {
       </Tabs>
       {pack && (
         <>
-          <Alert severity="warning">{pack.disclaimer}</Alert>
+          <Alert severity="warning" variant="outlined" sx={{ bgcolor: 'white' }}>{pack.disclaimer}</Alert>
           <Tabs value={view} onChange={(_, v) => setView(v)}>
             <Tab label={`Controls (${pack.controls.length})`} />
             <Tab label={`Clauses (${pack.clauses.length})`} />
             <Tab label={`Evaluation cases (${pack.evalCases.length})`} />
           </Tabs>
-          <Card variant="outlined">
+          <Card sx={{ overflow: "auto" }}>
             {view === 0 && (
               <Table size="small">
                 <TableHead>
@@ -116,7 +116,7 @@ export default function LibraryPage() {
                       <TableCell sx={{ whiteSpace: 'nowrap' }}><b>{c.ref}</b><Typography variant="caption" display="block" sx={{ fontFamily: 'monospace' }}>{c.id}</Typography></TableCell>
                       <TableCell>{c.regulation}</TableCell>
                       <TableCell><b>{c.title}.</b> {c.summary}</TableCell>
-                      <TableCell><Chip size="small" color={c.reviewStatus === 'draft' ? 'warning' : 'success'} label={c.reviewStatus} /></TableCell>
+                      <TableCell><Badge tone={c.reviewStatus === 'draft' ? 'amber' : 'green'} dot>{c.reviewStatus}</Badge></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

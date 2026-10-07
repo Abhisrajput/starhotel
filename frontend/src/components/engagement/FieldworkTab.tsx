@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { api } from '../../api';
 import type { TabProps } from '../../pages/EngagementPage';
 import type { Engagement, RcmRow, TestInput, TestResult } from '../../types';
-import { ActionButton, ConclusionChip, RiskChip } from '../common';
+import { ActionButton, ConclusionChip, ModuleBar, RiskChip } from '../common';
 
 type Draft = { designAdequate: string; observation: string; evidenceRefs: string; sampleTested: string; exceptions: string };
 
@@ -25,7 +25,7 @@ function RowCard({ row, input, result, engagementId, onSaved }: { row: RcmRow; i
     <Card variant="outlined">
       <CardContent>
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1.5 }} useFlexGap flexWrap="wrap">
-          <Typography sx={{ fontFamily: 'monospace' }}>{row.controlId}</Typography>
+          <Typography sx={{ fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12.5, color: 'text.secondary' }}>{row.controlId}</Typography>
           <Typography fontWeight={600} sx={{ flex: 1 }}>
             {row.control}
           </Typography>
@@ -90,14 +90,11 @@ function RowCard({ row, input, result, engagementId, onSaved }: { row: RcmRow; i
 export default function FieldworkTab({ engagement: e, setEngagement, run }: TabProps) {
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} alignItems="center">
+      <ModuleBar title="Testing · TOD / TOE" description='Record what you tested, then run Testing. Evidence gates: no "Effective" without evidence, never "Effective" with exceptions.'>
         <ActionButton startIcon={<PlayArrowIcon />} action={() => run('testing')}>
-          Run Testing (TOD / TOE)
+          Run testing
         </ActionButton>
-        <Typography color="text.secondary">
-          Record what you tested, then run Testing. Evidence gates: no "Effective" without evidence, never "Effective" with exceptions.
-        </Typography>
-      </Stack>
+      </ModuleBar>
       {e.rcm.map((r) => (
         <RowCard key={`${r.id}-${e.testInputs[r.id]?.updatedAt ?? ''}`} row={r} input={e.testInputs[r.id]} result={e.testResults[r.id]} engagementId={e.id} onSaved={setEngagement} />
       ))}

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../api';
 import type { TabProps } from '../../pages/EngagementPage';
 import type { TrailBundle } from '../../types';
-import { ActionButton } from '../common';
+import { ActionButton, Badge, ModuleBar } from '../common';
 
 interface Verification {
   valid: boolean;
@@ -22,14 +22,11 @@ export default function TrailTab({ engagement: e }: TabProps) {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} alignItems="center">
+      <ModuleBar title="Audit trail" description="Every module run and human action is sealed into a SHA-256 hash chain with inputs, retrieval set, log, QA decisions, output and versions.">
         <ActionButton startIcon={<VerifiedIcon />} action={async () => setVerification(await api<Verification>('/trail/verify'))}>
           Verify hash chain
         </ActionButton>
-        <Typography color="text.secondary">
-          Every module run and human action is sealed into a SHA-256 hash chain with its inputs, retrieval set, log, QA decisions, output and versions.
-        </Typography>
-      </Stack>
+      </ModuleBar>
       {verification && (
         <Alert severity={verification.valid ? 'success' : 'error'}>
           {verification.valid ? `Chain intact: ${verification.length} bundles verified.` : `Chain broken at bundle ${verification.brokenAt}: ${verification.reason}`}
@@ -39,22 +36,22 @@ export default function TrailTab({ engagement: e }: TabProps) {
         {trail.map((b) => {
           const fails = b.qaActions.filter((a) => a.outcome === 'fail').length;
           return (
-            <Accordion key={b.id} disableGutters variant="outlined" TransitionProps={{ unmountOnExit: true }}>
+            <Accordion key={b.id} TransitionProps={{ unmountOnExit: true }}>
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap flexWrap="wrap" sx={{ width: '100%' }}>
                   <Typography sx={{ fontFamily: 'monospace', minWidth: 40 }}>#{b.seq}</Typography>
-                  <Chip size="small" color={b.moduleId.startsWith('human:') ? 'default' : 'primary'} label={b.moduleId} />
+                  <Badge tone={b.moduleId.startsWith('human:') ? 'slate' : 'indigo'}>{b.moduleId}</Badge>
                   <Typography variant="body2" sx={{ flex: 1 }}>
                     by {b.actor} · {b.provider.id}/{b.provider.model} · {new Date(b.finishedAt).toLocaleString()}
                   </Typography>
-                  {b.qaActions.length > 0 && <Chip size="small" color={fails ? 'error' : 'success'} variant="outlined" label={`${b.qaActions.length} QA decisions${fails ? `, ${fails} fail` : ''}`} />}
+                  {b.qaActions.length > 0 && <Badge tone={fails ? 'red' : 'green'} dot>{`${b.qaActions.length} QA decisions${fails ? ` · ${fails} fail` : ''}`}</Badge>}
                   <Typography variant="caption" sx={{ fontFamily: 'monospace' }} color="text.secondary">
                     {b.hash.slice(0, 12)}…
                   </Typography>
                 </Stack>
               </AccordionSummary>
               <AccordionDetails>
-                <Box component="pre" sx={{ m: 0, p: 1.5, bgcolor: 'grey.100', borderRadius: 1, fontSize: 12, maxHeight: 420, overflow: 'auto' }}>
+                <Box component="pre" sx={{ m: 0, p: 1.5, bgcolor: '#0B1220', color: '#E2E8F0', borderRadius: 1, fontSize: 12, maxHeight: 420, overflow: 'auto' }}>
                   {JSON.stringify(b, null, 2)}
                 </Box>
               </AccordionDetails>

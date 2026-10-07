@@ -1,7 +1,7 @@
 import { ExpandMore as ExpandMoreIcon, PlayArrow as PlayArrowIcon } from '@mui/icons-material';
-import { Accordion, AccordionDetails, AccordionSummary, Box, Chip, Grid, Stack, Typography } from '@mui/material';
+import { Accordion, AccordionDetails, AccordionSummary, Box, Grid, Stack, Typography } from '@mui/material';
 import type { TabProps } from '../../pages/EngagementPage';
-import { ActionButton, Citations, RiskChip } from '../common';
+import { ActionButton, Badge, Citations, ModuleBar, RiskChip } from '../common';
 
 function List({ title, items }: { title: string; items: string[] }) {
   return (
@@ -21,24 +21,23 @@ function List({ title, items }: { title: string; items: string[] }) {
 export default function RcmTab({ engagement: e, run }: TabProps) {
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} alignItems="center">
+      <ModuleBar title="Control & Risk Writer" description={`${e.rcm.length} controls. Sample sizes follow frequency and inherent risk; citations are locked to the content pack.`}>
         <ActionButton startIcon={<PlayArrowIcon />} action={() => run('rcm')}>
-          {e.rcm.length ? 'Regenerate' : 'Generate'} risk & control matrix
+          {e.rcm.length ? 'Regenerate matrix' : 'Generate matrix'}
         </ActionButton>
-        <Typography color="text.secondary">{e.rcm.length} controls. Sample sizes follow frequency and inherent risk; citations come from the content pack and cannot be changed by the model.</Typography>
-      </Stack>
+      </ModuleBar>
       <Box>
         {e.rcm.map((r) => (
-          <Accordion key={r.id} disableGutters variant="outlined">
+          <Accordion key={r.id}>
             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
               <Stack direction="row" spacing={2} alignItems="center" sx={{ width: '100%' }} useFlexGap flexWrap="wrap">
-                <Typography sx={{ fontFamily: 'monospace', minWidth: 110 }}>{r.controlId}</Typography>
+                <Typography sx={{ fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12.5, color: 'text.secondary', minWidth: 100 }}>{r.controlId}</Typography>
                 <Typography fontWeight={600} sx={{ flex: 1 }}>
                   {r.control}
                 </Typography>
-                <Chip size="small" label={r.processArea} />
+                <Badge tone="slate">{r.processArea}</Badge>
                 <RiskChip rating={r.riskRating} />
-                <Chip size="small" variant="outlined" label={`${r.frequency} · sample ${r.sampleSize}`} />
+                <Badge tone="indigo">{`${r.frequency} · sample ${r.sampleSize}`}</Badge>
               </Stack>
             </AccordionSummary>
             <AccordionDetails>
